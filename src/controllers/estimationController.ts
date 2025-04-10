@@ -10,7 +10,6 @@ export const createEstimation = asyncHandler(
     const {
       clientName,
       workDescription,
-      estimationNumber,
       materials,
       labourCharges,
       termsAndConditions,
@@ -22,19 +21,36 @@ export const createEstimation = asyncHandler(
     } = req.body;
 
     // Basic validation
-    if (
-      !clientName ||
-      !workDescription ||
-      !estimationNumber ||
-      !materials?.length
-    ) {
+    if (!clientName || !workDescription || !materials?.length) {
       throw new ApiError(400, "Required fields are missing");
     }
+
+    // Get the latest estimation to determine the next number
+    const latestEstimation = await Estimation.findOne()
+      .sort({ estimationNumber: -1 })
+      .limit(1);
+
+    let nextSequence = 1; // Default to 0001 if no estimations exist
+    const currentYear = new Date().getFullYear().toString().slice(-2); // Get last 2 digits of year
+
+    if (latestEstimation) {
+      // Extract the sequence number from the latest estimation number
+      const latestNumber = latestEstimation.estimationNumber;
+      const latestSequence = parseInt(latestNumber.slice(5)); // Get the XXXX part
+
+      if (!isNaN(latestSequence)) {
+        nextSequence = latestSequence + 1;
+      }
+    }
+
+    // Format the sequence number with leading zeros
+    const sequencePart = nextSequence.toString().padStart(4, "0");
+    const estimationNumber = `EST${currentYear}${sequencePart}`;
 
     const estimation = await Estimation.create({
       clientName,
       workDescription,
-      estimationNumber,
+      estimationNumber, // Auto-generated number
       materials,
       labourCharges: labourCharges || [],
       termsAndConditions: termsAndConditions || [],
