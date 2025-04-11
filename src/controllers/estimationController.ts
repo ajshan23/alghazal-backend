@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-
 import { ApiResponse } from "../utils/apiHandlerHelpers";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiHandlerHelpers";
@@ -9,7 +8,14 @@ export const createEstimation = asyncHandler(
   async (req: Request, res: Response) => {
     const {
       clientName,
+      clientAddress,
       workDescription,
+      dateOfEstimation,
+      workStartDate,
+      workEndDate,
+      validUntil,
+      paymentDueBy,
+      status,
       materials,
       labourCharges,
       termsAndConditions,
@@ -20,37 +26,59 @@ export const createEstimation = asyncHandler(
       approvedByName,
     } = req.body;
 
-    // Basic validation
-    if (!clientName || !workDescription || !materials?.length) {
+    // Validate required fields
+    const requiredFields = [
+      clientName, clientAddress, workDescription, dateOfEstimation,
+      workStartDate, workEndDate, validUntil, paymentDueBy,
+      preparedByName, checkedByName, approvedByName
+    ];
+    
+    if (requiredFields.some(field => !field) || !materials?.length) {
       throw new ApiError(400, "Required fields are missing");
     }
 
-    // Get the latest estimation to determine the next number
+    // Validate date sequence
+    if (new Date(workStartDate) < new Date(dateOfEstimation)) {
+      throw new ApiError(400, "Work start date cannot be before estimation date");
+    }
+    if (new Date(workEndDate) < new Date(workStartDate)) {
+      throw new ApiError(400, "Work end date cannot be before work start date");
+    }
+    if (new Date(validUntil) < new Date(dateOfEstimation)) {
+      throw new ApiError(400, "Valid until date cannot be before estimation date");
+    }
+
+    // Generate estimation number
     const latestEstimation = await Estimation.findOne()
       .sort({ estimationNumber: -1 })
       .limit(1);
 
-    let nextSequence = 1; // Default to 0001 if no estimations exist
-    const currentYear = new Date().getFullYear().toString().slice(-2); // Get last 2 digits of year
+    let nextSequence = 1;
+    const currentYear = new Date().getFullYear().toString().slice(-2);
 
     if (latestEstimation) {
-      // Extract the sequence number from the latest estimation number
       const latestNumber = latestEstimation.estimationNumber;
-      const latestSequence = parseInt(latestNumber.slice(5)); // Get the XXXX part
+      const latestSequence = parseInt(latestNumber.slice(5));
 
       if (!isNaN(latestSequence)) {
         nextSequence = latestSequence + 1;
       }
     }
 
-    // Format the sequence number with leading zeros
     const sequencePart = nextSequence.toString().padStart(4, "0");
     const estimationNumber = `EST${currentYear}${sequencePart}`;
 
     const estimation = await Estimation.create({
       clientName,
+      clientAddress,
       workDescription,
-      estimationNumber, // Auto-generated number
+      dateOfEstimation,
+      workStartDate,
+      workEndDate,
+      validUntil,
+      paymentDueBy,
+      status: status || 'Draft',
+      estimationNumber,
       materials,
       labourCharges: labourCharges || [],
       termsAndConditions: termsAndConditions || [],
@@ -68,16 +96,89 @@ export const createEstimation = asyncHandler(
       );
   }
 );
+
+// Similarly update the updateEstimation controller
+export const updateEstimation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const {
+      clientName,
+      clientAddress,
+      workDescription,
+      dateOfEstimation,
+      workStartDate,
+      workEndDate,
+      validUntil,
+      paymentDueBy,
+      status,
+      materials,
+      labourCharges,
+      termsAndConditions,
+      quotationAmount,
+      commissionAmount,
+      preparedByName,
+      checkedByName,
+      approvedByName,
+    } = req.body;
+
+    if (!id) {
+      throw new ApiError(400, "Estimation ID is required");
+    }
+
+    // Validate date sequence
+    if (new Date(workStartDate) < new Date(dateOfEstimation)) {
+      throw new ApiError(400, "Work start date cannot be before estimation date");
+    }
+    if (new Date(workEndDate) < new Date(workStartDate)) {
+      throw new ApiError(400, "Work end date cannot be before work start date");
+    }
+    if (new Date(validUntil) < new Date(dateOfEstimation)) {
+      throw new ApiError(400, "Valid until date cannot be before estimation date");
+    }
+
+    const estimation = await Estimation.findByIdAndUpdate(
+      id,
+      {
+        clientName,
+        clientAddress,
+        workDescription,
+        dateOfEstimation,
+        workStartDate,
+        workEndDate,
+        validUntil,
+        paymentDueBy,
+        status,
+        materials,
+        labourCharges,
+        termsAndConditions,
+        quotationAmount,
+        commissionAmount,
+        preparedByName,
+        checkedByName,
+        approvedByName,
+      },
+      { new: true }
+    );
+
+    if (!estimation) {
+      throw new ApiError(404, "Estimation not found");
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, estimation, "Estimation updated successfully")
+      );
+  }
+);
+
 export const getEstimations = asyncHandler(
   async (req: Request, res: Response) => {
-    // Parse query parameters with default values
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
 
-    // Get total count of documents for pagination info
     const total = await Estimation.countDocuments({});
-
     const estimations = await Estimation.find({}).skip(skip).limit(limit);
 
     if (!estimations || estimations.length === 0) {
@@ -103,6 +204,7 @@ export const getEstimations = asyncHandler(
     );
   }
 );
+
 export const getEstimation = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -123,6 +225,77 @@ export const getEstimation = asyncHandler(
   }
 );
 
+// export const updateEstimation = asyncHandler(
+//   async (req: Request, res: Response) => {
+//     const { id } = req.params;
+//     const {
+//       clientName,
+//       clientAddress,
+//       workDescription,
+//       materials,
+//       labourCharges,
+//       termsAndConditions,
+//       quotationAmount,
+//       commissionAmount,
+//       preparedByName,
+//       checkedByName,
+//       approvedByName,
+//     } = req.body;
+
+//     if (!id) {
+//       throw new ApiError(400, "Estimation ID is required");
+//     }
+
+//     const estimation = await Estimation.findByIdAndUpdate(
+//       id,
+//       {
+//         clientName,
+//         clientAddress,
+//         workDescription,
+//         materials,
+//         labourCharges,
+//         termsAndConditions,
+//         quotationAmount,
+//         commissionAmount,
+//         preparedByName,
+//         checkedByName,
+//         approvedByName,
+//       },
+//       { new: true }
+//     );
+
+//     if (!estimation) {
+//       throw new ApiError(404, "Estimation not found");
+//     }
+
+//     return res
+//       .status(200)
+//       .json(
+//         new ApiResponse(200, estimation, "Estimation updated successfully")
+//       );
+//   }
+// );
+
+export const deleteEstimation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    if (!id) {
+      throw new ApiError(400, "Estimation ID is required");
+    }
+
+    const estimation = await Estimation.findByIdAndDelete(id);
+
+    if (!estimation) {
+      throw new ApiError(404, "Estimation not found");
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Estimation deleted successfully"));
+  }
+);
+
 export const generateEstimationReport = asyncHandler(
   async (req: Request, res: Response) => {
     const estimation = await Estimation.findById(req.params.id);
@@ -131,8 +304,6 @@ export const generateEstimationReport = asyncHandler(
       throw new ApiError(404, "Estimation not found");
     }
 
-    // In a real app, you'd use a PDF generation library like pdfkit
-    // Here we'll just return the data that would be used for the report
     const reportData = {
       ...estimation.toObject(),
       generatedDate: new Date(),

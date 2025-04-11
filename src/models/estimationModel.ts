@@ -23,9 +23,15 @@ interface ITermsItem {
 
 interface IEstimation extends Document {
   clientName: string;
+  clientAddress: string;
   workDescription: string;
   dateOfEstimation: Date;
+  workStartDate: Date;
+  workEndDate: Date;
+  validUntil: Date;
+  paymentDueBy: Date;
   estimationNumber: string;
+  status: string;
 
   materials: IMaterialItem[];
   totalMaterials: number;
@@ -69,9 +75,19 @@ const termsItemSchema = new Schema<ITermsItem>({
 
 const estimationSchema = new Schema<IEstimation>({
   clientName: { type: String, required: true },
+  clientAddress: { type: String, required: true },
   workDescription: { type: String, required: true },
   dateOfEstimation: { type: Date, default: Date.now },
+  workStartDate: { type: Date, required: true },
+  workEndDate: { type: Date, required: true },
+  validUntil: { type: Date, required: true },
+  paymentDueBy: { type: Date, required: true },
   estimationNumber: { type: String, required: true, unique: true },
+  status: {
+    type: String,
+    default: "Draft",
+    enum: ["Draft", "Sent", "Approved", "Rejected", "Converted"],
+  },
 
   materials: [materialItemSchema],
   totalMaterials: { type: Number, default: 0 },
@@ -92,7 +108,6 @@ const estimationSchema = new Schema<IEstimation>({
   approvedByName: { type: String, required: true },
 });
 
-// Auto-calculate totals before saving
 estimationSchema.pre<IEstimation>("save", function (next) {
   this.totalMaterials = this.materials.reduce(
     (sum, item) => sum + item.total,
@@ -112,6 +127,15 @@ estimationSchema.pre<IEstimation>("save", function (next) {
   if (this.quotationAmount && this.commissionAmount) {
     this.profit =
       this.quotationAmount - this.estimatedAmount - this.commissionAmount;
+  }
+
+  // Auto-generate estimation number if new
+  if (this.isNew) {
+    const currentYear = new Date().getFullYear().toString().slice(-2);
+    const sequencePart = this.estimationNumber
+      ? this.estimationNumber.slice(5)
+      : "0001";
+    this.estimationNumber = `EST${currentYear}${sequencePart}`;
   }
 
   next();
