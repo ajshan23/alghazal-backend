@@ -10,6 +10,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { ApiError } from "./utils/apiHandlerHelpers";
 import { errorHandler } from "./utils/errorHandler";
+import userRouter from "./routes/userRoutes";
 import estimationRouter from "./routes/estimationRoutes";
 import { connectDb } from "./config/db";
 dotenv.config();
@@ -36,6 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 // app.use(express.static("/var/www/kmcc-frontend/dist/"));
 app.use(morgan("dev")); // Logging
 app.use(helmet()); // Security
+app.use("/api/user", userRouter);
 app.use("/api/estimation", estimationRouter);
 
 app.get("/", (req: Request, res: Response) => {
