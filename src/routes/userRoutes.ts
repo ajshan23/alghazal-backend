@@ -5,6 +5,7 @@ import {
   getUser,
   updateUser,
   deleteUser,
+  login,
 } from "../controllers/userController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 
@@ -28,4 +29,5 @@ router.put("/:id", updateUser);
 // Delete user - Admin only
 router.delete("/:id", authorize(["admin", "super_admin"]), deleteUser);
 
+router.post("/login", login);
 export default router;

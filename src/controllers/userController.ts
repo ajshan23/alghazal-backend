@@ -4,7 +4,7 @@ import { ApiResponse } from "../utils/apiHandlerHelpers";
 import { ApiError } from "../utils/apiHandlerHelpers";
 import { User } from "../models/userModel";
 import bcrypt from "bcryptjs";
-
+import jwt from "jsonwebtoken";
 const SALT_ROUNDS = 10;
 
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
@@ -165,4 +165,62 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   await User.findByIdAndDelete(id);
 
   res.status(200).json(new ApiResponse(200, null, "User deleted successfully"));
+});
+
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  // Validate input
+  if (!email || !password) {
+    throw new ApiError(400, "Email and password are required");
+  }
+
+  // Find user by email
+  const user = await User.findOne({ email }).select("+password");
+  if (!user) {
+    throw new ApiError(401, "Invalid credentials");
+  }
+
+  // Check if user is active
+  if (!user.isActive) {
+    throw new ApiError(403, "Account is inactive. Please contact admin.");
+  }
+
+  // Verify password
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid credentials");
+  }
+
+  // Create JWT token
+  const token = jwt.sign(
+    {
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+    },
+    "alghaza_secret",
+    { expiresIn: "7d" }
+  );
+
+  // Remove password from response
+  const userResponse = user.toObject();
+  // delete userResponse.password;
+
+  // Set cookie (optional)
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+  });
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        token,
+      },
+      "Login successful"
+    )
+  );
 });
