@@ -12,6 +12,7 @@ import { ApiError } from "./utils/apiHandlerHelpers";
 import { errorHandler } from "./utils/errorHandler";
 import userRouter from "./routes/userRoutes";
 import estimationRouter from "./routes/estimationRoutes";
+import clientRouter from "./routes/clientRoutes";
 import { connectDb } from "./config/db";
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use(morgan("dev")); // Logging
 app.use(helmet()); // Security
 app.use("/api/user", userRouter);
 app.use("/api/estimation", estimationRouter);
+app.use("/api/client", clientRouter);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello, Secure and Logged World!");
