@@ -49,23 +49,49 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
 
+  // Build the filter object dynamically
   const filter: any = {};
-  if (req.query.role) filter.role = req.query.role;
-  if (req.query.isActive) filter.isActive = req.query.isActive === "true";
+
+  // Filter by role (if provided)
+  if (req.query.role) {
+    filter.role = req.query.role;
+  }
+
+  // Filter by active status (if provided)
+  if (req.query.isActive) {
+    filter.isActive = req.query.isActive === "true";
+  }
+
+  // Search functionality (if search term provided)
   if (req.query.search) {
+    const searchTerm = req.query.search as string;
     filter.$or = [
-      { firstName: { $regex: req.query.search, $options: "i" } },
-      { lastName: { $regex: req.query.search, $options: "i" } },
-      { email: { $regex: req.query.search, $options: "i" } },
+      { firstName: { $regex: searchTerm, $options: "i" } }, // Case-insensitive
+      { lastName: { $regex: searchTerm, $options: "i" } },
+      { email: { $regex: searchTerm, $options: "i" } },
+      // If you want to search by full name (firstName + lastName)
+      {
+        $expr: {
+          $regexMatch: {
+            input: { $concat: ["$firstName", " ", "$lastName"] },
+            regex: searchTerm,
+            options: "i",
+          },
+        },
+      },
     ];
   }
 
+  // Count total matching documents (for pagination)
   const total = await User.countDocuments(filter);
-  const users = await User.find(filter, { password: 0 })
+
+  // Fetch users with applied filters, pagination, and sorting
+  const users = await User.find(filter, { password: 0 }) // Exclude password
     .skip(skip)
     .limit(limit)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 }); // Newest first
 
+  // Return response with pagination metadata
   res.status(200).json(
     new ApiResponse(
       200,

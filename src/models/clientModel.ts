@@ -3,9 +3,9 @@ import { Document, Schema, model, Types } from "mongoose";
 export interface IClient extends Document {
   clientName: string;
   clientAddress: string;
-  clientNumbers: string[];
+  mobileNumber: string;
+  telephoneNumber?: string; // Optional
   trnNumber: string;
-  vatNumber: string;
   createdBy: Types.ObjectId;
   createdAt?: Date;
   updatedAt?: Date;
@@ -23,21 +23,16 @@ const clientSchema = new Schema<IClient>(
       required: true,
       trim: true,
     },
-    clientNumbers: {
-      type: [String],
-      required: true,
-      validate: {
-        validator: (numbers: string[]) => numbers.length > 0,
-        message: "At least one client number is required",
-      },
-    },
-    trnNumber: {
+    mobileNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
-    vatNumber: {
+    telephoneNumber: {
+      type: String,
+      trim: true,
+    },
+    trnNumber: {
       type: String,
       required: true,
       unique: true,
@@ -52,9 +47,8 @@ const clientSchema = new Schema<IClient>(
   { timestamps: true }
 );
 
-// Add index for frequently queried fields
+// Indexes
 clientSchema.index({ clientName: 1 });
 clientSchema.index({ trnNumber: 1 });
-clientSchema.index({ vatNumber: 1 });
 
 export const Client = model<IClient>("Client", clientSchema);

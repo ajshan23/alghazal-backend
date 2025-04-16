@@ -6,38 +6,43 @@ import { Client } from "../models/clientModel";
 
 export const createClient = asyncHandler(
   async (req: Request, res: Response) => {
-    const { clientName, clientAddress, clientNumbers, trnNumber, vatNumber } =
-      req.body;
+    const {
+      clientName,
+      clientAddress,
+      mobileNumber,
+      telephoneNumber,
+      trnNumber,
+    } = req.body;
 
     // Validate required fields
-    if (
-      !clientName ||
-      !clientAddress ||
-      !clientNumbers ||
-      !trnNumber ||
-      !vatNumber
-    ) {
-      throw new ApiError(400, "All fields are required");
-    }
-
-    // Check if TRN or VAT number already exists
-    const existingClient = await Client.findOne({
-      $or: [{ trnNumber }, { vatNumber }],
-    });
-
-    if (existingClient) {
+    if (!clientName || !clientAddress || !mobileNumber || !trnNumber) {
       throw new ApiError(
         400,
-        "Client with this TRN or VAT number already exists"
+        "Client name, address, mobile number and TRN are required"
       );
+    }
+
+    // Validate phone number formats
+    if (!/^\+?[\d\s-]{6,}$/.test(mobileNumber)) {
+      throw new ApiError(400, "Invalid mobile number format");
+    }
+
+    if (telephoneNumber && !/^\+?[\d\s-]{6,}$/.test(telephoneNumber)) {
+      throw new ApiError(400, "Invalid telephone number format");
+    }
+
+    // Check if TRN already exists
+    const existingClient = await Client.findOne({ trnNumber });
+    if (existingClient) {
+      throw new ApiError(400, "Client with this TRN already exists");
     }
 
     const client = await Client.create({
       clientName,
       clientAddress,
-      clientNumbers,
+      mobileNumber,
+      telephoneNumber,
       trnNumber,
-      vatNumber,
       createdBy: req.user?.userId,
     });
 
@@ -59,7 +64,7 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
     filter.$or = [
       { clientName: { $regex: req.query.search, $options: "i" } },
       { trnNumber: { $regex: req.query.search, $options: "i" } },
-      { vatNumber: { $regex: req.query.search, $options: "i" } },
+      { mobileNumber: { $regex: req.query.search, $options: "i" } },
     ];
   }
 
@@ -108,44 +113,51 @@ export const getClient = asyncHandler(async (req: Request, res: Response) => {
 export const updateClient = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { clientName, clientAddress, clientNumbers, trnNumber, vatNumber } =
-      req.body;
+    const {
+      clientName,
+      clientAddress,
+      mobileNumber,
+      telephoneNumber,
+      trnNumber,
+    } = req.body;
 
     const client = await Client.findById(id);
     if (!client) {
       throw new ApiError(404, "Client not found");
     }
 
-    // Check if TRN or VAT number conflicts with other clients
-    if (trnNumber || vatNumber) {
-      const orConditions = [];
+    // Validate phone number formats if provided
+    if (mobileNumber && !/^\+?[\d\s-]{6,}$/.test(mobileNumber)) {
+      throw new ApiError(400, "Invalid mobile number format");
+    }
 
-      if (trnNumber) orConditions.push({ trnNumber });
-      if (vatNumber) orConditions.push({ vatNumber });
+    if (telephoneNumber && !/^\+?[\d\s-]{6,}$/.test(telephoneNumber)) {
+      throw new ApiError(400, "Invalid telephone number format");
+    }
 
+    // Check if TRN is being updated and conflicts with other clients
+    if (trnNumber && trnNumber !== client.trnNumber) {
       const existingClient = await Client.findOne({
-        $and: [
-          { _id: { $ne: id } }, // Exclude current client
-          { $or: orConditions },
-        ],
+        trnNumber,
+        _id: { $ne: id }, // Exclude current client
       });
 
       if (existingClient) {
-        throw new ApiError(
-          400,
-          "Another client already uses this TRN or VAT number"
-        );
+        throw new ApiError(400, "Another client already uses this TRN");
       }
     }
 
     const updatedClient = await Client.findByIdAndUpdate(
       id,
       {
-        clientName,
-        clientAddress,
-        clientNumbers,
-        ...(trnNumber && { trnNumber }), // Only update if provided
-        ...(vatNumber && { vatNumber }), // Only update if provided
+        clientName: clientName || client.clientName,
+        clientAddress: clientAddress || client.clientAddress,
+        mobileNumber: mobileNumber || client.mobileNumber,
+        telephoneNumber:
+          telephoneNumber !== undefined
+            ? telephoneNumber
+            : client.telephoneNumber,
+        trnNumber: trnNumber || client.trnNumber,
       },
       { new: true }
     );
@@ -168,5 +180,23 @@ export const deleteClient = asyncHandler(
     res
       .status(200)
       .json(new ApiResponse(200, null, "Client deleted successfully"));
+  }
+);
+
+export const getClientByTrn = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { trnNumber } = req.params;
+
+    const client = await Client.findOne({ trnNumber }).populate(
+      "createdBy",
+      "firstName lastName email"
+    );
+    if (!client) {
+      throw new ApiError(404, "Client not found");
+    }
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, client, "Client retrieved successfully"));
   }
 );
