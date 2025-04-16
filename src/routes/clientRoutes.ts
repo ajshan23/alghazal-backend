@@ -6,6 +6,7 @@ import {
   updateClient,
   deleteClient,
   getClientByTrn,
+  getClientsByPincode,
 } from "../controllers/clientController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 
@@ -17,14 +18,17 @@ router.use(authenticate);
 // Create client - Admin only
 router.post("/", authorize(["admin", "super_admin"]), createClient);
 
-// Get all clients (accessible to all authenticated users)
+// Get all clients (with optional search and pincode filter)
 router.get("/", getClients);
 
-// Get client by ID (accessible to all authenticated users)
+// Get client by ID
 router.get("/:id", getClient);
 
-// Get client by TRN number (accessible to all authenticated users)
+// Get client by TRN
 router.get("/trn/:trnNumber", getClientByTrn);
+
+// Get clients by pincode
+router.get("/pincode/:pincode", getClientsByPincode);
 
 // Update client - Admin only
 router.put("/:id", authorize(["admin", "super_admin"]), updateClient);

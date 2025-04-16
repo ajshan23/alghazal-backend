@@ -3,8 +3,9 @@ import { Document, Schema, model, Types } from "mongoose";
 export interface IClient extends Document {
   clientName: string;
   clientAddress: string;
+  pincode: string;
   mobileNumber: string;
-  telephoneNumber?: string; // Optional
+  telephoneNumber?: string;
   trnNumber: string;
   createdBy: Types.ObjectId;
   createdAt?: Date;
@@ -23,14 +24,37 @@ const clientSchema = new Schema<IClient>(
       required: true,
       trim: true,
     },
+    pincode: {
+      type: String,
+      required: true,
+      trim: true,
+      validate: {
+        validator: function (v: string) {
+          return /^[0-9]{6}$/.test(v); // 6-digit pincode validation
+        },
+        message: (props: any) => `${props.value} is not a valid pincode!`,
+      },
+    },
     mobileNumber: {
       type: String,
       required: true,
       trim: true,
+      validate: {
+        validator: function (v: string) {
+          return /^\+?[\d\s-]{6,}$/.test(v);
+        },
+        message: (props: any) => `${props.value} is not a valid phone number!`,
+      },
     },
     telephoneNumber: {
       type: String,
       trim: true,
+      validate: {
+        validator: function (v: string) {
+          return v ? /^\+?[\d\s-]{6,}$/.test(v) : true;
+        },
+        message: (props: any) => `${props.value} is not a valid phone number!`,
+      },
     },
     trnNumber: {
       type: String,
@@ -50,5 +74,6 @@ const clientSchema = new Schema<IClient>(
 // Indexes
 clientSchema.index({ clientName: 1 });
 clientSchema.index({ trnNumber: 1 });
+clientSchema.index({ pincode: 1 });
 
 export const Client = model<IClient>("Client", clientSchema);

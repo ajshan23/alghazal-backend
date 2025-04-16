@@ -9,26 +9,24 @@ export const createClient = asyncHandler(
     const {
       clientName,
       clientAddress,
+      pincode,
       mobileNumber,
       telephoneNumber,
       trnNumber,
     } = req.body;
 
     // Validate required fields
-    if (!clientName || !clientAddress || !mobileNumber || !trnNumber) {
+    if (
+      !clientName ||
+      !clientAddress ||
+      !pincode ||
+      !mobileNumber ||
+      !trnNumber
+    ) {
       throw new ApiError(
         400,
-        "Client name, address, mobile number and TRN are required"
+        "Client name, address, pincode, mobile number and TRN are required"
       );
-    }
-
-    // Validate phone number formats
-    if (!/^\+?[\d\s-]{6,}$/.test(mobileNumber)) {
-      throw new ApiError(400, "Invalid mobile number format");
-    }
-
-    if (telephoneNumber && !/^\+?[\d\s-]{6,}$/.test(telephoneNumber)) {
-      throw new ApiError(400, "Invalid telephone number format");
     }
 
     // Check if TRN already exists
@@ -40,6 +38,7 @@ export const createClient = asyncHandler(
     const client = await Client.create({
       clientName,
       clientAddress,
+      pincode,
       mobileNumber,
       telephoneNumber,
       trnNumber,
@@ -65,7 +64,13 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
       { clientName: { $regex: req.query.search, $options: "i" } },
       { trnNumber: { $regex: req.query.search, $options: "i" } },
       { mobileNumber: { $regex: req.query.search, $options: "i" } },
+      { pincode: { $regex: req.query.search, $options: "i" } },
     ];
+  }
+
+  // Filter by pincode if provided
+  if (req.query.pincode) {
+    filter.pincode = req.query.pincode;
   }
 
   const total = await Client.countDocuments(filter);
@@ -116,6 +121,7 @@ export const updateClient = asyncHandler(
     const {
       clientName,
       clientAddress,
+      pincode,
       mobileNumber,
       telephoneNumber,
       trnNumber,
@@ -126,20 +132,16 @@ export const updateClient = asyncHandler(
       throw new ApiError(404, "Client not found");
     }
 
-    // Validate phone number formats if provided
-    if (mobileNumber && !/^\+?[\d\s-]{6,}$/.test(mobileNumber)) {
-      throw new ApiError(400, "Invalid mobile number format");
-    }
-
-    if (telephoneNumber && !/^\+?[\d\s-]{6,}$/.test(telephoneNumber)) {
-      throw new ApiError(400, "Invalid telephone number format");
+    // Validate pincode format if provided
+    if (pincode && !/^[0-9]{6}$/.test(pincode)) {
+      throw new ApiError(400, "Pincode must be 6 digits");
     }
 
     // Check if TRN is being updated and conflicts with other clients
     if (trnNumber && trnNumber !== client.trnNumber) {
       const existingClient = await Client.findOne({
         trnNumber,
-        _id: { $ne: id }, // Exclude current client
+        _id: { $ne: id },
       });
 
       if (existingClient) {
@@ -152,6 +154,7 @@ export const updateClient = asyncHandler(
       {
         clientName: clientName || client.clientName,
         clientAddress: clientAddress || client.clientAddress,
+        pincode: pincode || client.pincode,
         mobileNumber: mobileNumber || client.mobileNumber,
         telephoneNumber:
           telephoneNumber !== undefined
@@ -198,5 +201,43 @@ export const getClientByTrn = asyncHandler(
     res
       .status(200)
       .json(new ApiResponse(200, client, "Client retrieved successfully"));
+  }
+);
+
+export const getClientsByPincode = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { pincode } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    if (!/^[0-9]{6}$/.test(pincode)) {
+      throw new ApiError(400, "Invalid pincode format");
+    }
+
+    const total = await Client.countDocuments({ pincode });
+    const clients = await Client.find({ pincode })
+      .skip(skip)
+      .limit(limit)
+      .sort({ clientName: 1 })
+      .populate("createdBy", "firstName lastName email");
+
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          clients,
+          pagination: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            hasNextPage: page * limit < total,
+            hasPreviousPage: page > 1,
+          },
+        },
+        "Clients retrieved successfully"
+      )
+    );
   }
 );
