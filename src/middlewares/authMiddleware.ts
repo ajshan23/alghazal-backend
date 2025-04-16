@@ -27,7 +27,7 @@ export const authenticate = async (
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+    const decoded = jwt.verify(token, "alghaza_secret") as {
       userId: string;
     };
     const user = await User.findById(decoded.userId).select("-password");

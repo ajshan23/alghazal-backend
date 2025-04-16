@@ -11,6 +11,7 @@ import { authenticate, authorize } from "../middlewares/authMiddleware";
 
 const router = express.Router();
 
+router.post("/login", login);
 // Apply authentication to all routes
 router.use(authenticate);
 
@@ -29,5 +30,4 @@ router.put("/:id", updateUser);
 // Delete user - Admin only
 router.delete("/:id", authorize(["admin", "super_admin"]), deleteUser);
 
-router.post("/login", login);
 export default router;
