@@ -13,6 +13,7 @@ import { errorHandler } from "./utils/errorHandler";
 import userRouter from "./routes/userRoutes";
 import estimationRouter from "./routes/estimationRoutes";
 import clientRouter from "./routes/clientRoutes";
+import projectRouter from "./routes/projectRoutes";
 import { connectDb } from "./config/db";
 dotenv.config();
 
@@ -41,7 +42,8 @@ app.use(helmet()); // Security
 app.use("/api/user", userRouter);
 app.use("/api/estimation", estimationRouter);
 app.use("/api/client", clientRouter);
-
+app.use("/api/project", projectRouter);
+app.use(errorHandler as ErrorRequestHandler);
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello, Secure and Logged World!");
 });
@@ -51,7 +53,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Error-handling middleware
-app.use(errorHandler as ErrorRequestHandler);
+
 // app.get("*", (req, res) => {
 //   res.sendFile("/var/www/kmcc-frontend/dist/index.html");
 // });
