@@ -1,144 +1,187 @@
-import { Schema, model, Document } from "mongoose";
+import { Document, Schema, model, Types } from "mongoose";
+import { IProject } from "./projectModel";
+import { IUser } from "./userModel";
 
-interface IMaterialItem {
-  subjectMaterial: string;
+interface IEstimationItem {
+  description: string;
   quantity: number;
+  unit: string;
   unitPrice: number;
   total: number;
 }
 
-interface ILabourItem {
-  designation: string;
-  quantityDays: number;
-  price: number;
-  total: number;
-}
-
-interface ITermsItem {
-  miscellaneous: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-}
-
-interface IEstimation extends Document {
-  clientName: string;
-  clientAddress: string;
-  workDescription: string;
-  dateOfEstimation: Date;
+export interface IEstimation extends Document {
+  project: Types.ObjectId | IProject;
+  estimationNumber: string;
   workStartDate: Date;
   workEndDate: Date;
   validUntil: Date;
-  paymentDueBy: Date;
-  estimationNumber: string;
-  status: string;
+  paymentDueBy: number; // Number of days
 
-  materials: IMaterialItem[];
-  totalMaterials: number;
-
-  labourCharges: ILabourItem[];
-  totalLabour: number;
-
-  termsAndConditions: ITermsItem[];
-  totalMisc: number;
+  materials: IEstimationItem[];
+  labour: {
+    designation: string;
+    days: number;
+    price: number;
+    total: number;
+  }[];
+  termsAndConditions: IEstimationItem[];
 
   estimatedAmount: number;
   quotationAmount?: number;
   commissionAmount?: number;
   profit?: number;
 
-  preparedByName: string;
-  checkedByName: string;
-  approvedByName: string;
+  preparedBy: Types.ObjectId | IUser;
+  checkedBy?: Types.ObjectId | IUser;
+  approvedBy?: Types.ObjectId | IUser;
+
+  isChecked: boolean;
+  isApproved: boolean;
+  approvalComment?: string;
+
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const materialItemSchema = new Schema<IMaterialItem>({
-  subjectMaterial: { type: String, required: true },
-  quantity: { type: Number, required: true },
-  unitPrice: { type: Number, required: true },
-  total: { type: Number, required: true },
+const estimationItemSchema = new Schema<IEstimationItem>({
+  description: { type: String, required: true },
+  quantity: { type: Number, required: true, min: 0 },
+  unit: { type: String, required: true },
+  unitPrice: { type: Number, required: true, min: 0 },
+  total: { type: Number, required: true, min: 0 },
 });
 
-const labourItemSchema = new Schema<ILabourItem>({
-  designation: { type: String, required: true },
-  quantityDays: { type: Number, required: true },
-  price: { type: Number, required: true },
-  total: { type: Number, required: true },
-});
+const estimationSchema = new Schema<IEstimation>(
+  {
+    project: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
+      required: true,
+    },
+    estimationNumber: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    workStartDate: {
+      type: Date,
+      required: true,
+    },
+    workEndDate: {
+      type: Date,
+      required: true,
+      validate: {
+        validator: function (this: IEstimation, value: Date) {
+          return value > this.workStartDate;
+        },
+        message: "Work end date must be after start date",
+      },
+    },
+    validUntil: {
+      type: Date,
+      required: true,
+    },
+    paymentDueBy: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
 
-const termsItemSchema = new Schema<ITermsItem>({
-  miscellaneous: { type: String, required: true },
-  quantity: { type: Number, required: true },
-  unitPrice: { type: Number, required: true },
-  total: { type: Number, required: true },
-});
+    materials: [estimationItemSchema],
+    labour: [
+      {
+        designation: { type: String, required: true },
+        days: { type: Number, required: true, min: 0 },
+        price: { type: Number, required: true, min: 0 },
+        total: { type: Number, required: true, min: 0 },
+      },
+    ],
+    termsAndConditions: [estimationItemSchema],
 
-const estimationSchema = new Schema<IEstimation>({
-  clientName: { type: String, required: true },
-  clientAddress: { type: String, required: true },
-  workDescription: { type: String, required: true },
-  dateOfEstimation: { type: Date, default: Date.now },
-  workStartDate: { type: Date, required: true },
-  workEndDate: { type: Date, required: true },
-  validUntil: { type: Date, required: true },
-  paymentDueBy: { type: Date, required: true },
-  estimationNumber: { type: String, required: true, unique: true },
-  status: {
-    type: String,
-    default: "Draft",
-    enum: ["Draft", "Sent", "Approved", "Rejected", "Converted"],
+    estimatedAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    quotationAmount: {
+      type: Number,
+      min: 0,
+    },
+    commissionAmount: {
+      type: Number,
+      min: 0,
+    },
+    profit: {
+      type: Number,
+    },
+
+    preparedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    checkedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    isChecked: {
+      type: Boolean,
+      default: false,
+    },
+    isApproved: {
+      type: Boolean,
+      default: false,
+    },
+    approvalComment: {
+      type: String,
+    },
   },
+  { timestamps: true }
+);
 
-  materials: [materialItemSchema],
-  totalMaterials: { type: Number, default: 0 },
-
-  labourCharges: [labourItemSchema],
-  totalLabour: { type: Number, default: 0 },
-
-  termsAndConditions: [termsItemSchema],
-  totalMisc: { type: Number, default: 0 },
-
-  estimatedAmount: { type: Number, default: 0 },
-  quotationAmount: { type: Number },
-  commissionAmount: { type: Number },
-  profit: { type: Number },
-
-  preparedByName: { type: String, required: true },
-  checkedByName: { type: String, required: true },
-  approvedByName: { type: String, required: true },
-});
-
+// Calculate totals before saving
 estimationSchema.pre<IEstimation>("save", function (next) {
-  this.totalMaterials = this.materials.reduce(
+  // Calculate materials total
+  const materialsTotal = this.materials.reduce(
     (sum, item) => sum + item.total,
     0
   );
-  this.totalLabour = this.labourCharges.reduce(
-    (sum, item) => sum + item.total,
-    0
-  );
-  this.totalMisc = this.termsAndConditions.reduce(
-    (sum, item) => sum + item.total,
-    0
-  );
-  this.estimatedAmount =
-    this.totalMaterials + this.totalLabour + this.totalMisc;
 
-  if (this.quotationAmount && this.commissionAmount) {
+  // Calculate labour total
+  const labourTotal = this.labour.reduce((sum, item) => sum + item.total, 0);
+
+  // Calculate terms total
+  const termsTotal = this.termsAndConditions.reduce(
+    (sum, item) => sum + item.total,
+    0
+  );
+
+  // Set estimated amount
+  this.estimatedAmount = materialsTotal + labourTotal + termsTotal;
+
+  // Calculate profit if quotation amount exists
+  if (this.quotationAmount) {
     this.profit =
-      this.quotationAmount - this.estimatedAmount - this.commissionAmount;
-  }
-
-  // Auto-generate estimation number if new
-  if (this.isNew) {
-    const currentYear = new Date().getFullYear().toString().slice(-2);
-    const sequencePart = this.estimationNumber
-      ? this.estimationNumber.slice(5)
-      : "0001";
-    this.estimationNumber = `EST${currentYear}${sequencePart}`;
+      this.quotationAmount -
+      this.estimatedAmount -
+      (this.commissionAmount || 0);
   }
 
   next();
 });
+
+// Indexes
+estimationSchema.index({ project: 1 });
+estimationSchema.index({ estimationNumber: 1 });
+estimationSchema.index({ isApproved: 1 });
+estimationSchema.index({ isChecked: 1 });
+estimationSchema.index({ workStartDate: 1 });
+estimationSchema.index({ workEndDate: 1 });
 
 export const Estimation = model<IEstimation>("Estimation", estimationSchema);

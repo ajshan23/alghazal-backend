@@ -1,95 +1,81 @@
 import { Request, Response } from "express";
-import { ApiResponse } from "../utils/apiHandlerHelpers";
 import { asyncHandler } from "../utils/asyncHandler";
+import { ApiResponse } from "../utils/apiHandlerHelpers";
 import { ApiError } from "../utils/apiHandlerHelpers";
 import { Estimation } from "../models/estimationModel";
+import { Project } from "../models/projectModel";
+import { Types } from "mongoose";
+
+// Helper function to generate document numbers
+const generateEstimationNumber = async () => {
+  const count = await Estimation.countDocuments();
+  return `EST-${new Date().getFullYear()}-${(count + 1)
+    .toString()
+    .padStart(4, "0")}`;
+};
 
 export const createEstimation = asyncHandler(
   async (req: Request, res: Response) => {
     const {
-      clientName,
-      clientAddress,
-      workDescription,
-      dateOfEstimation,
+      project,
       workStartDate,
       workEndDate,
       validUntil,
       paymentDueBy,
-      status,
       materials,
-      labourCharges,
+      labour,
       termsAndConditions,
       quotationAmount,
       commissionAmount,
-      preparedByName,
-      checkedByName,
-      approvedByName,
     } = req.body;
 
     // Validate required fields
-    const requiredFields = [
-      clientName, clientAddress, workDescription, dateOfEstimation,
-      workStartDate, workEndDate, validUntil, paymentDueBy,
-      preparedByName, checkedByName, approvedByName
-    ];
-    
-    if (requiredFields.some(field => !field) || !materials?.length) {
+    if (
+      !project ||
+      !workStartDate ||
+      !workEndDate ||
+      !validUntil ||
+      !paymentDueBy
+    ) {
       throw new ApiError(400, "Required fields are missing");
     }
 
-    // Validate date sequence
-    if (new Date(workStartDate) < new Date(dateOfEstimation)) {
-      throw new ApiError(400, "Work start date cannot be before estimation date");
-    }
-    if (new Date(workEndDate) < new Date(workStartDate)) {
-      throw new ApiError(400, "Work end date cannot be before work start date");
-    }
-    if (new Date(validUntil) < new Date(dateOfEstimation)) {
-      throw new ApiError(400, "Valid until date cannot be before estimation date");
-    }
-
-    // Generate estimation number
-    const latestEstimation = await Estimation.findOne()
-      .sort({ estimationNumber: -1 })
-      .limit(1);
-
-    let nextSequence = 1;
-    const currentYear = new Date().getFullYear().toString().slice(-2);
-
-    if (latestEstimation) {
-      const latestNumber = latestEstimation.estimationNumber;
-      const latestSequence = parseInt(latestNumber.slice(5));
-
-      if (!isNaN(latestSequence)) {
-        nextSequence = latestSequence + 1;
-      }
+    if (
+      (!materials || materials.length === 0) &&
+      (!labour || labour.length === 0) &&
+      (!termsAndConditions || termsAndConditions.length === 0)
+    ) {
+      throw new ApiError(
+        400,
+        "At least one item (materials, labour, or terms) is required"
+      );
     }
 
-    const sequencePart = nextSequence.toString().padStart(4, "0");
-    const estimationNumber = `EST${currentYear}${sequencePart}`;
+    // Check if project exists
+    const projectExists = await Project.findById(project);
+    if (!projectExists) {
+      throw new ApiError(404, "Project not found");
+    }
 
+    // Create estimation (totals will be calculated in pre-save hook)
     const estimation = await Estimation.create({
-      clientName,
-      clientAddress,
-      workDescription,
-      dateOfEstimation,
-      workStartDate,
-      workEndDate,
-      validUntil,
+      project,
+      estimationNumber: await generateEstimationNumber(),
+      workStartDate: new Date(workStartDate),
+      workEndDate: new Date(workEndDate),
+      validUntil: new Date(validUntil),
       paymentDueBy,
-      status: status || 'Draft',
-      estimationNumber,
       materials,
-      labourCharges: labourCharges || [],
-      termsAndConditions: termsAndConditions || [],
+      labour,
+      termsAndConditions,
       quotationAmount,
       commissionAmount,
-      preparedByName,
-      checkedByName,
-      approvedByName,
+      preparedBy: req.user?.userId,
+      isChecked: false,
+      isApproved: false,
     });
 
-    return res
+    res
       .status(201)
       .json(
         new ApiResponse(201, estimation, "Estimation created successfully")
@@ -97,74 +83,155 @@ export const createEstimation = asyncHandler(
   }
 );
 
-// Similarly update the updateEstimation controller
-export const updateEstimation = asyncHandler(
+export const markAsChecked = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
-    const {
-      clientName,
-      clientAddress,
-      workDescription,
-      dateOfEstimation,
-      workStartDate,
-      workEndDate,
-      validUntil,
-      paymentDueBy,
-      status,
-      materials,
-      labourCharges,
-      termsAndConditions,
-      quotationAmount,
-      commissionAmount,
-      preparedByName,
-      checkedByName,
-      approvedByName,
-    } = req.body;
+    const { comment } = req.body;
+    const checkedById = req.user?.userId;
 
-    if (!id) {
-      throw new ApiError(400, "Estimation ID is required");
+    if (!checkedById) {
+      throw new ApiError(404, "User not found");
     }
 
-    // Validate date sequence
-    if (new Date(workStartDate) < new Date(dateOfEstimation)) {
-      throw new ApiError(400, "Work start date cannot be before estimation date");
-    }
-    if (new Date(workEndDate) < new Date(workStartDate)) {
-      throw new ApiError(400, "Work end date cannot be before work start date");
-    }
-    if (new Date(validUntil) < new Date(dateOfEstimation)) {
-      throw new ApiError(400, "Valid until date cannot be before estimation date");
+    const estimation = await Estimation.findById(id);
+    if (!estimation) {
+      throw new ApiError(404, "Estimation not found");
     }
 
-    const estimation = await Estimation.findByIdAndUpdate(
-      id,
-      {
-        clientName,
-        clientAddress,
-        workDescription,
-        dateOfEstimation,
-        workStartDate,
-        workEndDate,
-        validUntil,
-        paymentDueBy,
-        status,
-        materials,
-        labourCharges,
-        termsAndConditions,
-        quotationAmount,
-        commissionAmount,
-        preparedByName,
-        checkedByName,
-        approvedByName,
-      },
-      { new: true }
-    );
+    if (estimation.isChecked) {
+      throw new ApiError(400, "Estimation is already checked");
+    }
+
+    estimation.isChecked = true;
+    estimation.checkedBy = new Types.ObjectId(checkedById); // Convert string to ObjectId
+    if (comment) estimation.approvalComment = comment;
+
+    await estimation.save();
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, estimation, "Estimation marked as checked"));
+  }
+);
+
+export const approveEstimation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { comment, approved } = req.body;
+    const approvedBy = req.user?.userId;
+    if (!approvedBy) {
+      throw new ApiError(404, "User not found");
+    }
+    if (typeof approved !== "boolean") {
+      throw new ApiError(400, "Approval status is required");
+    }
+
+    const estimation = await Estimation.findById(id);
+    if (!estimation) {
+      throw new ApiError(404, "Estimation not found");
+    }
+
+    if (!estimation.isChecked) {
+      throw new ApiError(400, "Estimation must be checked before approval");
+    }
+
+    if (estimation.isApproved) {
+      throw new ApiError(400, "Estimation is already approved");
+    }
+
+    estimation.isApproved = approved;
+    estimation.approvedBy = new Types.ObjectId(approvedBy);
+    estimation.approvalComment = comment;
+    await estimation.save();
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          estimation,
+          `Estimation ${approved ? "approved" : "rejected"}`
+        )
+      );
+  }
+);
+
+export const getEstimationsByProject = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const { status } = req.query;
+
+    const filter: any = { project: projectId };
+    if (status === "checked") filter.isChecked = true;
+    if (status === "approved") filter.isApproved = true;
+    if (status === "pending") filter.isChecked = false;
+
+    const estimations = await Estimation.find(filter)
+      .populate("preparedBy", "firstName lastName")
+      .populate("checkedBy", "firstName lastName")
+      .populate("approvedBy", "firstName lastName")
+      .sort({ createdAt: -1 });
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(200, estimations, "Estimations retrieved successfully")
+      );
+  }
+);
+
+export const getEstimationDetails = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const estimation = await Estimation.findById(id)
+      .populate("project", "projectName client")
+      .populate("preparedBy", "firstName lastName")
+      .populate("checkedBy", "firstName lastName")
+      .populate("approvedBy", "firstName lastName");
 
     if (!estimation) {
       throw new ApiError(404, "Estimation not found");
     }
 
-    return res
+    res
+      .status(200)
+      .json(new ApiResponse(200, estimation, "Estimation details retrieved"));
+  }
+);
+
+export const updateEstimation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const estimation = await Estimation.findById(id);
+    if (!estimation) {
+      throw new ApiError(404, "Estimation not found");
+    }
+
+    if (estimation.isApproved) {
+      throw new ApiError(400, "Cannot update approved estimation");
+    }
+
+    // Reset checked status if updating
+    if (estimation.isChecked) {
+      estimation.isChecked = false;
+      estimation.checkedBy = undefined;
+      estimation.approvalComment = undefined;
+    }
+
+    // Don't allow changing these fields directly
+    delete updateData.isApproved;
+    delete updateData.approvedBy;
+    delete updateData.estimatedAmount;
+    delete updateData.profit;
+
+    // Update fields
+    estimation.set(updateData);
+    await estimation.save();
+
+    res
       .status(200)
       .json(
         new ApiResponse(200, estimation, "Estimation updated successfully")
@@ -172,145 +239,23 @@ export const updateEstimation = asyncHandler(
   }
 );
 
-export const getEstimations = asyncHandler(
-  async (req: Request, res: Response) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const skip = (page - 1) * limit;
-
-    const total = await Estimation.countDocuments({});
-    const estimations = await Estimation.find({}).skip(skip).limit(limit);
-
-    if (!estimations || estimations.length === 0) {
-      throw new ApiError(404, "Estimations not found");
-    }
-
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        {
-          estimations,
-          pagination: {
-            total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit),
-            hasNextPage: page * limit < total,
-            hasPreviousPage: page > 1,
-          },
-        },
-        "Estimations retrieved successfully"
-      )
-    );
-  }
-);
-
-export const getEstimation = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    if (!id) {
-      throw new ApiError(400, "Estimation ID is required");
-    }
-    const estimation = await Estimation.findById(id);
-
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, estimation, "Estimation retrieved successfully")
-      );
-  }
-);
-
-// export const updateEstimation = asyncHandler(
-//   async (req: Request, res: Response) => {
-//     const { id } = req.params;
-//     const {
-//       clientName,
-//       clientAddress,
-//       workDescription,
-//       materials,
-//       labourCharges,
-//       termsAndConditions,
-//       quotationAmount,
-//       commissionAmount,
-//       preparedByName,
-//       checkedByName,
-//       approvedByName,
-//     } = req.body;
-
-//     if (!id) {
-//       throw new ApiError(400, "Estimation ID is required");
-//     }
-
-//     const estimation = await Estimation.findByIdAndUpdate(
-//       id,
-//       {
-//         clientName,
-//         clientAddress,
-//         workDescription,
-//         materials,
-//         labourCharges,
-//         termsAndConditions,
-//         quotationAmount,
-//         commissionAmount,
-//         preparedByName,
-//         checkedByName,
-//         approvedByName,
-//       },
-//       { new: true }
-//     );
-
-//     if (!estimation) {
-//       throw new ApiError(404, "Estimation not found");
-//     }
-
-//     return res
-//       .status(200)
-//       .json(
-//         new ApiResponse(200, estimation, "Estimation updated successfully")
-//       );
-//   }
-// );
-
 export const deleteEstimation = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    if (!id) {
-      throw new ApiError(400, "Estimation ID is required");
-    }
-
-    const estimation = await Estimation.findByIdAndDelete(id);
-
+    const estimation = await Estimation.findById(id);
     if (!estimation) {
       throw new ApiError(404, "Estimation not found");
     }
 
-    return res
+    if (estimation.isApproved) {
+      throw new ApiError(400, "Cannot delete approved estimation");
+    }
+
+    await Estimation.findByIdAndDelete(id);
+
+    res
       .status(200)
       .json(new ApiResponse(200, null, "Estimation deleted successfully"));
-  }
-);
-
-export const generateEstimationReport = asyncHandler(
-  async (req: Request, res: Response) => {
-    const estimation = await Estimation.findById(req.params.id);
-
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    const reportData = {
-      ...estimation.toObject(),
-      generatedDate: new Date(),
-    };
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, reportData, "Estimation report generated"));
   }
 );
