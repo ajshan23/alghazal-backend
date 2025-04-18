@@ -37,19 +37,10 @@ export const createProject = asyncHandler(
       client,
       siteAddress,
       siteLocation,
-      startDate,
-      estimatedEndDate,
     } = req.body;
 
     // Validate required fields
-    if (
-      !projectName ||
-      !client ||
-      !siteAddress ||
-      !siteLocation ||
-      !startDate ||
-      !estimatedEndDate
-    ) {
+    if (!projectName || !client || !siteAddress || !siteLocation) {
       throw new ApiError(400, "Required fields are missing");
     }
 
@@ -65,8 +56,6 @@ export const createProject = asyncHandler(
       client,
       siteAddress,
       siteLocation,
-      startDate: new Date(startDate),
-      estimatedEndDate: new Date(estimatedEndDate),
       status: "draft",
       progress: 0,
       createdBy: req.user?.userId,
@@ -96,15 +85,6 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
     filter.client = req.query.client;
   }
 
-  // Date range filters
-  if (req.query.startDateFrom) {
-    filter.startDate = { $gte: new Date(req.query.startDateFrom as string) };
-  }
-  if (req.query.startDateTo) {
-    filter.startDate = filter.startDate || {};
-    filter.startDate.$lte = new Date(req.query.startDateTo as string);
-  }
-
   // Search functionality
   if (req.query.search) {
     const searchTerm = req.query.search as string;
@@ -112,6 +92,7 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
       { projectName: { $regex: searchTerm, $options: "i" } },
       { projectDescription: { $regex: searchTerm, $options: "i" } },
       { siteAddress: { $regex: searchTerm, $options: "i" } },
+      { siteLocation: { $regex: searchTerm, $options: "i" } },
     ];
   }
 
@@ -174,15 +155,6 @@ export const updateProject = asyncHandler(
       throw new ApiError(404, "Project not found");
     }
 
-    // Validate dates
-    if (updateData.startDate && updateData.estimatedEndDate) {
-      if (
-        new Date(updateData.estimatedEndDate) <= new Date(updateData.startDate)
-      ) {
-        throw new ApiError(400, "End date must be after start date");
-      }
-    }
-
     // Validate progress (0-100)
     if (updateData.progress !== undefined) {
       if (updateData.progress < 0 || updateData.progress > 100) {
@@ -190,7 +162,7 @@ export const updateProject = asyncHandler(
       }
     }
 
-    // Update actual dates based on status changes
+    // Update status with validation
     if (updateData.status) {
       if (
         !validStatusTransitions[project.status]?.includes(updateData.status)
@@ -199,14 +171,6 @@ export const updateProject = asyncHandler(
           400,
           `Invalid status transition from ${project.status} to ${updateData.status}`
         );
-      }
-
-      // Auto-set actual dates
-      if (updateData.status === "work_started" && !project.actualStartDate) {
-        updateData.actualStartDate = new Date();
-      }
-      if (updateData.status === "work_completed" && !project.actualEndDate) {
-        updateData.actualEndDate = new Date();
       }
     }
 
@@ -228,7 +192,7 @@ export const updateProject = asyncHandler(
 export const updateProjectStatus = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status } = req.body;
 
     if (!status) {
       throw new ApiError(400, "Status is required");
@@ -251,19 +215,6 @@ export const updateProjectStatus = asyncHandler(
       status,
       updatedBy: req.user?.userId,
     };
-
-    // Auto-set dates based on status
-    if (status === "work_started" && !project.actualStartDate) {
-      updateData.actualStartDate = new Date();
-    }
-    if (status === "work_completed" && !project.actualEndDate) {
-      updateData.actualEndDate = new Date();
-      updateData.progress = 100;
-    }
-    if (status === "project_closed") {
-      updateData.actualEndDate = project.actualEndDate || new Date();
-      updateData.progress = 100;
-    }
 
     const updatedProject = await Project.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -303,7 +254,6 @@ export const updateProjectProgress = asyncHandler(
     // Auto-update status if progress reaches 100%
     if (progress === 100 && project.status !== "work_completed") {
       updateData.status = "work_completed";
-      updateData.actualEndDate = new Date();
     }
 
     const updatedProject = await Project.findByIdAndUpdate(id, updateData, {

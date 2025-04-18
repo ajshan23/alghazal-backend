@@ -6,14 +6,7 @@ export interface IProject extends Document {
   projectDescription: string;
   client: Types.ObjectId | IClient;
   siteAddress: string;
-  siteLocation: {
-    latitude: number;
-    longitude: number;
-  };
-  startDate: Date;
-  estimatedEndDate: Date;
-  actualStartDate?: Date;
-  actualEndDate?: Date;
+  siteLocation: string; // Changed to string
   status:
     | "draft"
     | "estimation_prepared"
@@ -61,43 +54,9 @@ const projectSchema = new Schema<IProject>(
       trim: true,
     },
     siteLocation: {
-      latitude: { type: Number, required: true },
-      longitude: { type: Number, required: true },
-    },
-    startDate: {
-      type: Date,
+      type: String, // Changed to String
       required: true,
-    },
-    estimatedEndDate: {
-      type: Date,
-      required: true,
-      validate: {
-        validator: function (this: IProject, value: Date) {
-          return value > this.startDate;
-        },
-        message: "End date must be after start date",
-      },
-    },
-    actualStartDate: {
-      type: Date,
-      validate: {
-        validator: function (this: IProject, value: Date) {
-          return !value || value >= this.startDate;
-        },
-        message: "Actual start date cannot be before planned start date",
-      },
-    },
-    actualEndDate: {
-      type: Date,
-      validate: {
-        validator: function (this: IProject, value: Date) {
-          return (
-            !value ||
-            (this.actualStartDate ? value >= this.actualStartDate : true)
-          );
-        },
-        message: "Actual end date cannot be before actual start date",
-      },
+      trim: true,
     },
     status: {
       type: String,
@@ -143,10 +102,6 @@ const projectSchema = new Schema<IProject>(
 projectSchema.index({ projectName: 1 });
 projectSchema.index({ client: 1 });
 projectSchema.index({ status: 1 });
-projectSchema.index({ startDate: 1 });
-projectSchema.index({ estimatedEndDate: 1 });
-projectSchema.index({ actualStartDate: 1 });
-projectSchema.index({ actualEndDate: 1 });
 projectSchema.index({ progress: 1 });
 
 export const Project = model<IProject>("Project", projectSchema);
