@@ -34,7 +34,15 @@ router.get("/", authorize(["admin", "super_admin", "finance"]), getUsers);
 router.get("/:id", getUser);
 
 // Update user
-router.put("/:id", updateUser);
+router.put(
+  "/:id",
+  authorize(["admin", "super_admin", "finance"]), // This should verify the user is authenticated
+  upload.fields([
+    { name: "profileImage", maxCount: 1 },
+    { name: "signatureImage", maxCount: 1 },
+  ]),
+  updateUser
+);
 
 // Delete user - Admin only
 router.delete("/:id", authorize(["admin", "super_admin"]), deleteUser);

@@ -6,6 +6,7 @@ import { User } from "../models/userModel";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
+  deleteFileFromS3,
   uploadSignatureImage,
   uploadUserProfileImage,
 } from "../utils/uploadConf";
@@ -188,6 +189,68 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   // Handle password update
   if (updateData.password) {
     updateData.password = await bcrypt.hash(updateData.password, SALT_ROUNDS);
+  }
+
+  // Process profile image if uploaded
+  if (req.files && (req.files as any).profileImage) {
+    const profileImage = (req.files as any).profileImage[0];
+    const uploadResult = await uploadUserProfileImage(profileImage);
+
+    if (uploadResult.success && uploadResult.uploadData) {
+      // Delete old profile image if it exists
+      if (user.profileImage) {
+        try {
+          await deleteFileFromS3(user.profileImage);
+        } catch (err) {
+          console.error("Error deleting old profile image:", err);
+        }
+      }
+      updateData.profileImage = uploadResult.uploadData.url;
+    }
+  }
+
+  // Process signature image if uploaded
+  if (req.files && (req.files as any).signatureImage) {
+    const signatureImage = (req.files as any).signatureImage[0];
+    const uploadResult = await uploadSignatureImage(signatureImage);
+
+    if (uploadResult.success && uploadResult.uploadData) {
+      // Delete old signature image if it exists
+      if (user.signatureImage) {
+        try {
+          await deleteFileFromS3(user.signatureImage);
+        } catch (err) {
+          console.error("Error deleting old signature image:", err);
+        }
+      }
+      updateData.signatureImage = uploadResult.uploadData.url;
+    }
+  }
+
+  // Handle profile image removal if requested
+  if (updateData.removeProfileImage === "true") {
+    if (user.profileImage) {
+      try {
+        await deleteFileFromS3(user.profileImage);
+      } catch (err) {
+        console.error("Error deleting profile image:", err);
+      }
+    }
+    updateData.profileImage = undefined;
+    delete updateData.removeProfileImage;
+  }
+
+  // Handle signature image removal if requested
+  if (updateData.removeSignatureImage === "true") {
+    if (user.signatureImage) {
+      try {
+        await deleteFileFromS3(user.signatureImage);
+      } catch (err) {
+        console.error("Error deleting signature image:", err);
+      }
+    }
+    updateData.signatureImage = undefined;
+    delete updateData.removeSignatureImage;
   }
 
   const updatedUser = await User.findByIdAndUpdate(id, updateData, {

@@ -122,7 +122,7 @@ export const createEstimation = asyncHandler(
       quotationAmount,
       commissionAmount,
       preparedBy: req.user?.userId,
-      subject:subject,
+      subject: subject,
     });
 
     res
@@ -321,9 +321,9 @@ export const generateEstimationPdf = asyncHandler(
           select: "clientName clientAddress",
         },
       })
-      .populate("preparedBy", "name")
-      .populate("checkedBy", "name")
-      .populate("approvedBy", "name");
+      .populate("preparedBy", "name signatureImage")
+      .populate("checkedBy", "name signatureImage")
+      .populate("approvedBy", "name signatureImage");
     console.log(estimation);
 
     if (!estimation) {
@@ -354,6 +354,9 @@ export const generateEstimationPdf = asyncHandler(
     const formatDate = (date: Date) => {
       return date ? new Date(date).toLocaleDateString("en-GB") : "";
     };
+    const approvedBy = estimation.approvedBy;
+    const checkedBy = estimation.checkedBy;
+    const preparedBy = estimation.preparedBy;
 
     // Prepare HTML content
     let htmlContent = `
@@ -2445,7 +2448,7 @@ export const generateEstimationPdf = asyncHandler(
       </tr>
       <tr class="row7">
         <td class="column1 style41 s style42" colspan="2" rowspan="2" style="padding-left: 10px;">
-          ${estimation.project?.projectName}
+          ${estimation.subject}
         </td>
         <td class="column3 style2 s">NUMBER</td>
         <td class="column4 style4 null"></td>
@@ -2474,12 +2477,17 @@ export const generateEstimationPdf = asyncHandler(
       </tr>
       ${estimation.materials
         .map(
-          (material) => `
+          (material, index) => `
         <tr class="row11">
-          <td class="column1 style32 s">${
-            material.description.split(" ")[0]
-          }</td>
-          <td class="column2 style27 s">${material.description}</td>
+        
+          ${
+            index === 0
+              ? `<td class="column1 style46 null style48" rowspan="${
+                  estimation.materials.length + 1
+                }"></td>`
+              : ""
+          }
+          <td class="column2 style7 s">${material.description}</td>
           <td class="column3 style8 n">${material.quantity.toFixed(2)}</td>
           <td class="column4 style21 n">${material.unitPrice.toFixed(2)}</td>
           <td class="column5 style16 f">${material.total.toFixed(2)}</td>
@@ -2488,7 +2496,7 @@ export const generateEstimationPdf = asyncHandler(
         )
         .join("")}
       <tr class="row16">
-        <td class="column1 style26 null"></td>
+       
         <td class="column2 style35 s style37" colspan="3">TOTAL MATERIALS&nbsp;&nbsp;</td>
         <td class="column5 style18 f">${materialsTotal.toFixed(2)}</td>
       </tr>
@@ -2506,15 +2514,21 @@ export const generateEstimationPdf = asyncHandler(
       </tr>
       ${estimation.labour
         .map(
-          (labour) => `
-        <tr class="row19">
-          <td class="column1 style46 null style48" rowspan="2"></td>
-          <td class="column2 style7 s">${labour.designation}</td>
-          <td class="column3 style21 n">${labour.days.toFixed(2)}</td>
-          <td class="column4 style21 n">${labour.price.toFixed(2)}</td>
-          <td class="column5 style17 f">${labour.total.toFixed(2)}</td>
-        </tr>
-      `
+          (labour, index) => `
+          <tr class="row19">
+            ${
+              index === 0
+                ? `<td class="column1 style46 null style48" rowspan="${
+                    estimation.labour.length + 1
+                  }"></td>`
+                : ""
+            }
+            <td class="column2 style7 s">${labour.designation}</td>
+            <td class="column3 style21 n">${labour.days.toFixed(2)}</td>
+            <td class="column4 style21 n">${labour.price.toFixed(2)}</td>
+            <td class="column5 style17 f">${labour.total.toFixed(2)}</td>
+          </tr>
+        `
         )
         .join("")}
       <tr class="row21">
@@ -2522,34 +2536,40 @@ export const generateEstimationPdf = asyncHandler(
         <td class="column5 style18 f">${labourTotal.toFixed(2)}</td>
       </tr>
 
-      <!-- Terms and conditions section - Fixed version -->
-      <tr class="row22">
-        <td class="column1 style15 s">TERMS AND CONDITIONS</td>
-        <td class="column2 style9 s">MISCELLANEOUS CHARGES</td>
-        <td class="column3 style22 s">QTY</td>
-        <td class="column4 style6 s">PRICE</td>
-        <td class="column5 style16 s">TOTAL</td>
-      </tr>
-      ${estimation.termsAndConditions
-        .map(
-          (term) => `
-        <tr class="row23">
-          <td class="column1 style34 null"></td>
-          <td class="column2 style7 s">${term.description}</td>
-          <td class="column3 style21 n">${term.quantity.toFixed(2)}</td>
-          <td class="column4 style8 n">${term.unitPrice.toFixed(2)}</td>
-          <td class="column5 style17 f">${term.total.toFixed(2)}</td>
-        </tr>
-      `
-        )
-        .join("")}
-      <tr class="row24">
-        <td class="column1 style34 null"></td>
-        <td class="column2 style35 s style37" colspan="3">
-          TOTAL MISCELLANEOUS &nbsp;&nbsp;
-        </td>
-        <td class="column5 style18 f">${termsTotal.toFixed(2)}</td>
-      </tr>
+      <!-- Terms and conditions section -->
+   <tr class="row18">
+  <td class="column1 style15 s">TERMS AND CONDITIONS</td>
+  <td class="column2 style9 s">MISCELLANEOUS CHARGES</td>
+  <td class="column3 style22 s">QTY</td>
+  <td class="column4 style6 s">PRICE</td>
+  <td class="column5 style16 s">TOTAL</td>
+</tr>
+${estimation.termsAndConditions
+  .map(
+    (term, index) => `
+  <tr class="row19">
+    ${
+      index === 0
+        ? `<td class="column1 style34 null" rowspan="${
+            estimation.termsAndConditions.length + 1
+          }"></td>`
+        : ""
+    }
+    <td class="column2 style7 s">${term.description}</td>
+    <td class="column3 style21 n">${term.quantity.toFixed(2)}</td>
+    <td class="column4 style8 n">${term.unitPrice.toFixed(2)}</td>
+    <td class="column5 style17 f">${term.total.toFixed(2)}</td>
+  </tr>
+`
+  )
+  .join("")}
+<tr class="row24">
+  
+  <td class="column2 style35 s style37" colspan="3">
+    TOTAL MISCELLANEOUS &nbsp;&nbsp;
+  </td>
+  <td class="column5 style18 f">${termsTotal.toFixed(2)}</td>
+</tr>
 
       <!-- Amount summary -->
       <tr class="row25">
@@ -2571,7 +2591,7 @@ export const generateEstimationPdf = asyncHandler(
         <td class="column5 style20 f">
           <div style="position: relative">
             <img
-              style="position: absolute; z-index: 1; left: 26px; top: 44px; width: 96px; height: 102px;"
+              style="position: absolute; z-index: 1; left: 12px; top: 28px; width: 96px; height: 102px;"
               src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/seal.png"
               border="0"
             />
@@ -2594,34 +2614,48 @@ export const generateEstimationPdf = asyncHandler(
         <td class="column5 style62 null style63" rowspan="2"></td>
       </tr>
       <tr class="row29">
-        <td class="column1 style31 null">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 104px; top: 12px; width: 55px; height: 32px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/admin.png"
-              border="0"
-            />
-          </div>
-        </td>
-        <td class="column2 style30 null">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 50px; top: 12px; width: 80px; height: 36px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/eng.png"
-              border="0"
-            />
-          </div>
-        </td>
-        <td class="column3 style60 null style61" colspan="2">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 108px; top: 6px; width: 87px; height: 42px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/ma.png"
-              border="0"
-            />
-          </div>
-        </td>
-      </tr>
+      <td class="column1 style31 null" style="text-align: center;">
+        <div style="display: inline-block;">
+         ${
+           preparedBy?.signatureImage
+             ? ` <img
+           style="width: 55px; height: 32px;"
+          src="${preparedBy?.signatureImage}"
+          border="0"
+        />`
+             : ""
+         }
+          
+        </div>
+      </td>
+      <td class="column2 style30 null" style="text-align: center;">
+        <div style="display: inline-block;">
+        ${
+          checkedBy?.signatureImage
+            ? ` <img
+         style="width: 80px; height: 36px;"
+          src="${checkedBy?.signatureImage}"
+          border="0"
+        />`
+            : ""
+        }
+         
+        </div>
+      </td>
+      <td class="column3 style60 null style61" colspan="2" style="text-align: center;">
+        <div style="display: inline-block;">
+          ${
+            approvedBy?.signatureImage
+              ? ` <img
+            style="width: 87px; height: 42px;"
+            src="${approvedBy?.signatureImage}"
+            border="0"
+          />`
+              : ""
+          }
+        </div>
+      </td>
+    </tr>
     </tbody>
   </table>
 </body>
