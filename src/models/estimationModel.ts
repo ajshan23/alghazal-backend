@@ -2,11 +2,18 @@ import { Document, Schema, model, Types } from "mongoose";
 import { IProject } from "./projectModel";
 import { IUser } from "./userModel";
 
+// Removed 'unit' completely
 interface IEstimationItem {
   description: string;
   quantity: number;
-  unit: string;
   unitPrice: number;
+  total: number;
+}
+
+interface ILabourItem {
+  designation: string;
+  days: number;
+  price: number;
   total: number;
 }
 
@@ -16,16 +23,12 @@ export interface IEstimation extends Document {
   workStartDate: Date;
   workEndDate: Date;
   validUntil: Date;
-  paymentDueBy: number; // Number of days
+  paymentDueBy: number;
 
+  subject?: string; // Optional field
   materials: IEstimationItem[];
-  labour: {
-    designation: string;
-    days: number;
-    price: number;
-    total: number;
-  }[];
-  termsAndConditions: IEstimationItem[];
+  labour: ILabourItem[];
+  termsAndConditions: IEstimationItem[]; // No 'unit' here either
 
   estimatedAmount: number;
   quotationAmount?: number;
@@ -47,8 +50,14 @@ export interface IEstimation extends Document {
 const estimationItemSchema = new Schema<IEstimationItem>({
   description: { type: String, required: true },
   quantity: { type: Number, required: true, min: 0 },
-  unit: { type: String, required: true },
   unitPrice: { type: Number, required: true, min: 0 },
+  total: { type: Number, required: true, min: 0 },
+});
+
+const labourItemSchema = new Schema<ILabourItem>({
+  designation: { type: String, required: true },
+  days: { type: Number, required: true, min: 0 },
+  price: { type: Number, required: true, min: 0 },
   total: { type: Number, required: true, min: 0 },
 });
 
@@ -58,6 +67,7 @@ const estimationSchema = new Schema<IEstimation>(
       type: Schema.Types.ObjectId,
       ref: "Project",
       required: true,
+      unique: true, // Ensures only one estimation per project
     },
     estimationNumber: {
       type: String,
@@ -87,22 +97,17 @@ const estimationSchema = new Schema<IEstimation>(
       required: true,
       min: 0,
     },
-
+    subject: {
+      type: String,
+    },
     materials: [estimationItemSchema],
-    labour: [
-      {
-        designation: { type: String, required: true },
-        days: { type: Number, required: true, min: 0 },
-        price: { type: Number, required: true, min: 0 },
-        total: { type: Number, required: true, min: 0 },
-      },
-    ],
-    termsAndConditions: [estimationItemSchema],
-
+    labour: [labourItemSchema],
+    termsAndConditions: [estimationItemSchema], // Same schema as materials
     estimatedAmount: {
       type: Number,
       required: true,
       min: 0,
+      default: 0,
     },
     quotationAmount: {
       type: Number,
@@ -115,7 +120,6 @@ const estimationSchema = new Schema<IEstimation>(
     profit: {
       type: Number,
     },
-
     preparedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -129,7 +133,6 @@ const estimationSchema = new Schema<IEstimation>(
       type: Schema.Types.ObjectId,
       ref: "User",
     },
-
     isChecked: {
       type: Boolean,
       default: false,
@@ -145,27 +148,23 @@ const estimationSchema = new Schema<IEstimation>(
   { timestamps: true }
 );
 
-// Calculate totals before saving
+// Pre-save hook (unchanged)
 estimationSchema.pre<IEstimation>("save", function (next) {
-  // Calculate materials total
   const materialsTotal = this.materials.reduce(
-    (sum, item) => sum + item.total,
+    (sum, item) => sum + (item.total || 0),
     0
   );
-
-  // Calculate labour total
-  const labourTotal = this.labour.reduce((sum, item) => sum + item.total, 0);
-
-  // Calculate terms total
+  const labourTotal = this.labour.reduce(
+    (sum, item) => sum + (item.total || 0),
+    0
+  );
   const termsTotal = this.termsAndConditions.reduce(
-    (sum, item) => sum + item.total,
+    (sum, item) => sum + (item.total || 0),
     0
   );
 
-  // Set estimated amount
   this.estimatedAmount = materialsTotal + labourTotal + termsTotal;
 
-  // Calculate profit if quotation amount exists
   if (this.quotationAmount) {
     this.profit =
       this.quotationAmount -
@@ -176,7 +175,7 @@ estimationSchema.pre<IEstimation>("save", function (next) {
   next();
 });
 
-// Indexes
+// Indexes (unchanged)
 estimationSchema.index({ project: 1 });
 estimationSchema.index({ estimationNumber: 1 });
 estimationSchema.index({ isApproved: 1 });

@@ -5,6 +5,10 @@ import { ApiError } from "../utils/apiHandlerHelpers";
 import { User } from "../models/userModel";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import {
+  uploadSignatureImage,
+  uploadUserProfileImage,
+} from "../utils/uploadConf";
 const SALT_ROUNDS = 10;
 
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
@@ -28,6 +32,28 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
+  // Handle file uploads if they exist
+  let profileImageUrl: string | undefined;
+  let signatureImageUrl: string | undefined;
+
+  // Process profile image if uploaded
+  if (req.files && (req.files as any).profileImage) {
+    const profileImage = (req.files as any).profileImage[0];
+    const uploadResult = await uploadUserProfileImage(profileImage);
+    if (uploadResult.success && uploadResult.uploadData) {
+      profileImageUrl = uploadResult.uploadData.url;
+    }
+  }
+
+  // Process signature image if uploaded
+  if (req.files && (req.files as any).signatureImage) {
+    const signatureImage = (req.files as any).signatureImage[0];
+    const uploadResult = await uploadSignatureImage(signatureImage);
+    if (uploadResult.success && uploadResult.uploadData) {
+      signatureImageUrl = uploadResult.uploadData.url;
+    }
+  }
+
   const user = await User.create({
     email,
     password: hashedPassword,
@@ -35,11 +61,10 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     firstName,
     lastName,
     role,
+    profileImage: profileImageUrl,
+    signatureImage: signatureImageUrl,
     createdBy: req.user?.userId,
   });
-
-  const userResponse = user.toObject();
-  // delete userResponse.password;
 
   res.status(201).json(new ApiResponse(201, {}, "User created successfully"));
 });
@@ -245,6 +270,11 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
       200,
       {
         token,
+        user: {
+          role: userResponse.role,
+          name: userResponse.firstName,
+          email: userResponse.email,
+        },
       },
       "Login successful"
     )

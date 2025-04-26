@@ -1,3 +1,4 @@
+// user.model.ts
 import { Document, Schema, model, Types } from "mongoose";
 
 export interface IUser extends Document {
@@ -9,7 +10,8 @@ export interface IUser extends Document {
   lastName: string;
   role: string;
   isActive?: boolean;
-  image?: string;
+  profileImage?: string;
+  signatureImage?: string;
   address?: string;
   createdBy?: Types.ObjectId;
   createdAt?: Date;
@@ -29,7 +31,8 @@ const userSchema = new Schema<IUser>(
       enum: ["super_admin", "admin", "engineer", "finance", "driver"],
     },
     isActive: { type: Boolean, default: true },
-    image: { type: String },
+    profileImage: { type: String }, // Stores S3 URL for profile image
+    signatureImage: { type: String }, // Stores S3 URL for signature image
     address: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
   },

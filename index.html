@@ -1,365 +1,6 @@
-import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ApiResponse } from "../utils/apiHandlerHelpers";
-import { ApiError } from "../utils/apiHandlerHelpers";
-import { Estimation } from "../models/estimationModel";
-import { Project } from "../models/projectModel";
-import { Types } from "mongoose";
-import puppeteer from "puppeteer";
-
-// Helper function to generate document numbers
-const generateEstimationNumber = async () => {
-  const count = await Estimation.countDocuments();
-  return `EST-${new Date().getFullYear()}-${(count + 1)
-    .toString()
-    .padStart(4, "0")}`;
-};
-export const createEstimation = asyncHandler(
-  async (req: Request, res: Response) => {
-    const {
-      project,
-      workStartDate,
-      workEndDate,
-      validUntil,
-      paymentDueBy,
-      materials,
-      labour,
-      termsAndConditions,
-      quotationAmount,
-      commissionAmount,
-      subject,
-    } = req.body;
-
-    // Validate required fields
-    if (
-      !project ||
-      !workStartDate ||
-      !workEndDate ||
-      !validUntil ||
-      !paymentDueBy
-    ) {
-      throw new ApiError(400, "Required fields are missing");
-    }
-    // Check if an estimation already exists for this project
-    const existingEstimation = await Estimation.findOne({ project });
-    if (existingEstimation) {
-      throw new ApiError(
-        400,
-        "Only one estimation is allowed per project. Update the existing estimation instead."
-      );
-    }
-
-    // Validate materials (no 'unit' check)
-    if (materials && materials.length > 0) {
-      for (const item of materials) {
-        if (
-          !item.description ||
-          item.quantity == null ||
-          item.unitPrice == null
-        ) {
-          throw new ApiError(
-            400,
-            "Material items require description, quantity, and unitPrice"
-          );
-        }
-        item.total = item.quantity * item.unitPrice;
-      }
-    }
-
-    // Validate labour (unchanged)
-    if (labour && labour.length > 0) {
-      for (const item of labour) {
-        if (!item.designation || item.days == null || item.price == null) {
-          throw new ApiError(
-            400,
-            "Labour items require designation, days, and price"
-          );
-        }
-        item.total = item.days * item.price;
-      }
-    }
-
-    // Validate terms (no 'unit' check)
-    if (termsAndConditions && termsAndConditions.length > 0) {
-      for (const item of termsAndConditions) {
-        if (
-          !item.description ||
-          item.quantity == null ||
-          item.unitPrice == null
-        ) {
-          throw new ApiError(
-            400,
-            "Terms items require description, quantity, and unitPrice"
-          );
-        }
-        item.total = item.quantity * item.unitPrice;
-      }
-    }
-
-    // At least one item is required
-    if (
-      (!materials || materials.length === 0) &&
-      (!labour || labour.length === 0) &&
-      (!termsAndConditions || termsAndConditions.length === 0)
-    ) {
-      throw new ApiError(
-        400,
-        "At least one item (materials, labour, or terms) is required"
-      );
-    }
-
-    // Rest of the controller remains the same...
-    const estimation = await Estimation.create({
-      project,
-      estimationNumber: await generateEstimationNumber(),
-      workStartDate: new Date(workStartDate),
-      workEndDate: new Date(workEndDate),
-      validUntil: new Date(validUntil),
-      paymentDueBy,
-      materials: materials || [],
-      labour: labour || [],
-      termsAndConditions: termsAndConditions || [],
-      quotationAmount,
-      commissionAmount,
-      preparedBy: req.user?.userId,
-      subject:subject,
-    });
-
-    res
-      .status(201)
-      .json(
-        new ApiResponse(201, estimation, "Estimation created successfully")
-      );
-  }
-);
-export const markAsChecked = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const { comment } = req.body;
-    const checkedById = req.user?.userId;
-
-    if (!checkedById) {
-      throw new ApiError(404, "User not found");
-    }
-
-    const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    if (estimation.isChecked) {
-      throw new ApiError(400, "Estimation is already checked");
-    }
-
-    estimation.isChecked = true;
-    estimation.checkedBy = new Types.ObjectId(checkedById); // Convert string to ObjectId
-    if (comment) estimation.approvalComment = comment;
-
-    await estimation.save();
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, estimation, "Estimation marked as checked"));
-  }
-);
-
-export const approveEstimation = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const { comment, approved } = req.body;
-    const approvedBy = req.user?.userId;
-    if (!approvedBy) {
-      throw new ApiError(404, "User not found");
-    }
-    if (typeof approved !== "boolean") {
-      throw new ApiError(400, "Approval status is required");
-    }
-
-    const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    if (!estimation.isChecked) {
-      throw new ApiError(400, "Estimation must be checked before approval");
-    }
-
-    if (estimation.isApproved) {
-      throw new ApiError(400, "Estimation is already approved");
-    }
-
-    estimation.isApproved = approved;
-    estimation.approvedBy = new Types.ObjectId(approvedBy);
-    estimation.approvalComment = comment;
-    await estimation.save();
-
-    res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          estimation,
-          `Estimation ${approved ? "approved" : "rejected"}`
-        )
-      );
-  }
-);
-
-export const getEstimationsByProject = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { projectId } = req.params;
-    const { status } = req.query;
-
-    const filter: any = { project: projectId };
-    if (status === "checked") filter.isChecked = true;
-    if (status === "approved") filter.isApproved = true;
-    if (status === "pending") filter.isChecked = false;
-
-    const estimations = await Estimation.find(filter)
-      .populate("preparedBy", "firstName lastName")
-      .populate("checkedBy", "firstName lastName")
-      .populate("approvedBy", "firstName lastName")
-      .sort({ createdAt: -1 });
-
-    res
-      .status(200)
-      .json(
-        new ApiResponse(200, estimations, "Estimations retrieved successfully")
-      );
-  }
-);
-
-export const getEstimationDetails = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-
-    const estimation = await Estimation.findById(id)
-      .populate("project", "projectName client")
-      .populate("preparedBy", "firstName lastName")
-      .populate("checkedBy", "firstName lastName")
-      .populate("approvedBy", "firstName lastName");
-
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, estimation, "Estimation details retrieved"));
-  }
-);
-
-export const updateEstimation = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const updateData = req.body;
-
-    const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    if (estimation.isApproved) {
-      throw new ApiError(400, "Cannot update approved estimation");
-    }
-
-    // Reset checked status if updating
-    if (estimation.isChecked) {
-      estimation.isChecked = false;
-      estimation.checkedBy = undefined;
-      estimation.approvalComment = undefined;
-    }
-
-    // Don't allow changing these fields directly
-    delete updateData.isApproved;
-    delete updateData.approvedBy;
-    delete updateData.estimatedAmount;
-    delete updateData.profit;
-
-    // Update fields
-    estimation.set(updateData);
-    await estimation.save();
-
-    res
-      .status(200)
-      .json(
-        new ApiResponse(200, estimation, "Estimation updated successfully")
-      );
-  }
-);
-
-export const deleteEstimation = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-
-    const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    if (estimation.isApproved) {
-      throw new ApiError(400, "Cannot delete approved estimation");
-    }
-
-    await Estimation.findByIdAndDelete(id);
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, null, "Estimation deleted successfully"));
-  }
-);
-
-export const generateEstimationPdf = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const estimation = await Estimation.findById(id)
-      .populate({
-        path: "project",
-        select: "projectName client siteAddress",
-        populate: {
-          path: "client",
-          select: "clientName clientAddress",
-        },
-      })
-      .populate("preparedBy", "name")
-      .populate("checkedBy", "name")
-      .populate("approvedBy", "name");
-    console.log(estimation);
-
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    // Verify populated data exists
-    if (!estimation.project || !estimation.project.client) {
-      throw new ApiError(400, "Client information not found");
-    }
-
-    // Calculate totals
-    const materialsTotal = estimation.materials.reduce(
-      (sum, item) => sum + item.total,
-      0
-    );
-    const labourTotal = estimation.labour.reduce(
-      (sum, item) => sum + item.total,
-      0
-    );
-    const termsTotal = estimation.termsAndConditions.reduce(
-      (sum, item) => sum + item.total,
-      0
-    );
-    const estimatedAmount = materialsTotal + labourTotal + termsTotal;
-
-    // Format dates
-    const formatDate = (date: Date) => {
-      return date ? new Date(date).toLocaleDateString("en-GB") : "";
-    };
-
-    // Prepare HTML content
-    let htmlContent = `
-    <!DOCTYPE html>
-    <html>
-     <head>
+<!DOCTYPE html PUBLIC "">
+<html>
+  <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta
       name=""
@@ -2392,285 +2033,287 @@ export const generateEstimationPdf = asyncHandler(
       }
     </style>
   </head>
-      <body>
-  <table border="0" cellpadding="0" cellspacing="0" id="sheet0" class="sheet0 gridlines" style="width: 50%; margin: 0 auto">
-    <col class="col0" />
-    <col class="col1" />
-    <col class="col2" />
-    <col class="col3" />
-    <col class="col4" />
-    <col class="col5" />
-    <tbody>
-      <tr class="row1">
-        <td class="column1 style51 null style53" colspan="5">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 1px; top: 6px; width: 929px; height: 155px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/logo.png"
-              border="0"
-            />
-          </div>
-        </td>
-      </tr>
-      <tr class="row2">
-        <td class="column1 style54 s style56" colspan="5">ESTIMATION</td>
-      </tr>
-      <tr class="row3">
-        <td class="column1 style49 s style50" colspan="2" style="padding-left: 10px;">Client Name</td>
-        <td class="column3 style10 s">DATE</td>
-        <td class="column4 style10 null"></td>
-        <td class="column5 style10 null"></td>
-      </tr>
-      <tr class="row4">
-        <td class="column1 style41 s style42" colspan="2" style="padding-left: 10px;">${
-          estimation?.project?.client?.clientName
-        }</td>
-        <td class="column3 style11 s">OF ESTIMATION</td>
-        <td class="column4 style11 null"></td>
-        <td class="column5 style11 null"></td>
-      </tr>
-      <tr class="row5">
-        <td class="column1 style41 s style42" colspan="2" style="padding-left: 10px;">
-          ${estimation.project?.client?.clientAddress}
-        </td>
-        <td class="column3 style12 s">${formatDate(new Date())}</td>
-        <td class="column4 style12 null"></td>
-        <td class="column5 style12 null"></td>
-      </tr>
-      <tr class="row6">
-        <td class="column1 style49 null style50" colspan="2"></td>
-        <td class="column3 style1 s">ESTIMATION</td>
-        <td class="column4 style3 null"></td>
-        <td class="column5 style10 s">PAYMENT</td>
-      </tr>
-      <tr class="row7">
-        <td class="column1 style41 s style42" colspan="2" rowspan="2" style="padding-left: 10px;">
-          ${estimation.project?.projectName}
-        </td>
-        <td class="column3 style2 s">NUMBER</td>
-        <td class="column4 style4 null"></td>
-        <td class="column5 style11 s">DUE BY</td>
-      </tr>
-      <tr class="row8">
-        <td class="column3 style5 s">${estimation.estimationNumber}</td>
-        <td class="column4 style5 null"></td>
-        <td class="column5 style12 s">${estimation.paymentDueBy} Days</td>
-      </tr>
-      <tr class="row9">
-        <td class="column1 style13 null"></td>
-        <td class="column2 style25 null"></td>
-        <td class="column3 style25 null"></td>
-        <td class="column4 style25 null"></td>
-        <td class="column5 style14 null"></td>
-      </tr>
 
-      <!-- Materials section -->
-      <tr class="row10">
-        <td class="column1 style15 s">SUBJECT</td>
-        <td class="column2 style6 s">MATERIAL</td>
-        <td class="column3 style6 s">QTY</td>
-        <td class="column4 style22 s">UNIT PRICE</td>
-        <td class="column5 style16 s">TOTAL</td>
-      </tr>
-      ${estimation.materials
-        .map(
-          (material) => `
+  <body>
+    <style>
+      @page {
+        margin-left: 0.18in;
+        margin-right: 0.37in;
+        margin-top: 0.35433070866142in;
+        margin-bottom: 0.35433070866142in;
+      }
+      body {
+        margin-left: 0.18in;
+        margin-right: 0.37in;
+        margin-top: 0.35433070866142in;
+        margin-bottom: 0.35433070866142in;
+      }
+    </style>
+    <table
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      id="sheet0"
+      class="sheet0 gridlines"
+      style="width: 50%; margin: 0 auto"
+    >
+      <col class="col0" />
+      <col class="col1" />
+      <col class="col2" />
+      <col class="col3" />
+      <col class="col4" />
+      <col class="col5" />
+      <tbody>
+        <tr class="row1">
+          <td class="column1 style51 null style53" colspan="5">
+            <div style="position: relative">
+              <img
+                style="
+                  z-index: 1;
+                  left: 1px;
+                  top: 6px;
+                  width: 929px;
+                  height: 155px;
+                "
+                src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/logo.png"
+                border="0"
+              />
+            </div>
+          </td>
+        </tr>
+        <tr class="row2">
+          <td class="column1 style54 s style56" colspan="5">ESTIMATION</td>
+        </tr>
+        <tr class="row3">
+          <td class="column1 style49 s style50" colspan="2" style="padding-left: 10px;">Client Name</td>
+          <td class="column3 style10 s">DATE</td>
+          <td class="column4 style10 null"></td>
+          <td class="column5 style10 null"></td>
+        </tr>
+        <tr class="row4">
+          <td class="column1 style41 s style42" colspan="2" style="padding-left: 10px;">Client Adress</td>
+          <td class="column3 style11 s">OF ESTIMATION</td>
+          <td class="column4 style11 null"></td>
+          <td class="column5 style11 null"></td>
+        </tr>
+        <tr class="row5">
+          <td class="column1 style41 s style42" colspan="2" style="padding-left: 10px;">
+            ClientEngineer Name:
+          </td>
+          <td class="column3 style12 s">29.01.2025</td>
+          <td class="column4 style12 null"></td>
+          <td class="column5 style12 null"></td>
+        </tr>
+        <tr class="row6">
+          <td class="column1 style49 null style50" colspan="2"></td>
+          <td class="column3 style1 s">ESTIMATION</td>
+          <td class="column4 style3 null"></td>
+          <td class="column5 style10 s">PAYMENT</td>
+        </tr>
+        <tr class="row7">
+          <td class="column1 style41 s style42" colspan="2" rowspan="2" style="padding-left: 10px;">
+            Description of Work
+          </td>
+          <td class="column3 style2 s">NUMBER</td>
+          <td class="column4 style4 null"></td>
+          <td class="column5 style11 s">DUE BY</td>
+        </tr>
+        <tr class="row8">
+          <td class="column3 style5 s">EST0041</td>
+          <td class="column4 style5 null"></td>
+          <td class="column5 style12 s">60 Days</td>
+        </tr>
+        <tr class="row9">
+          <td class="column1 style13 null"></td>
+          <td class="column2 style25 null"></td>
+          <td class="column3 style25 null"></td>
+          <td class="column4 style25 null"></td>
+          <td class="column5 style14 null"></td>
+        </tr>
+        <tr class="row10">
+          <td class="column1 style15 s">SUBJECT</td>
+          <td class="column2 style6 s">MATERIAL</td>
+          <td class="column3 style6 s">QTY</td>
+          <td class="column4 style22 s">UNIT PRICE</td>
+          <td class="column5 style16 s">TOTAL</td>
+        </tr>
         <tr class="row11">
-          <td class="column1 style32 s">${
-            material.description.split(" ")[0]
-          }</td>
-          <td class="column2 style27 s">${material.description}</td>
-          <td class="column3 style8 n">${material.quantity.toFixed(2)}</td>
-          <td class="column4 style21 n">${material.unitPrice.toFixed(2)}</td>
-          <td class="column5 style16 f">${material.total.toFixed(2)}</td>
+          <td class="column1 style32 s">Signage</td>
+          <td class="column2 style27 s">Removal &amp; disposal (3 ton)</td>
+          <td class="column3 style8 n">1.00</td>
+          <td class="column4 style21 n">400.00</td>
+          <td class="column5 style16 f">400</td>
         </tr>
-      `
-        )
-        .join("")}
-      <tr class="row16">
-        <td class="column1 style26 null"></td>
-        <td class="column2 style35 s style37" colspan="3">TOTAL MATERIALS&nbsp;&nbsp;</td>
-        <td class="column5 style18 f">${materialsTotal.toFixed(2)}</td>
-      </tr>
-      <tr class="row17">
-        <td class="column1 style43 null style45" colspan="5"></td>
-      </tr>
-
-      <!-- Labour section -->
-      <tr class="row18">
-        <td class="column1 style15 s">LABOUR CHARGES</td>
-        <td class="column2 style9 s">DESIGNATION</td>
-        <td class="column3 style22 s">QTY/DAYS</td>
-        <td class="column4 style6 s">PRICE</td>
-        <td class="column5 style16 s">TOTAL</td>
-      </tr>
-      ${estimation.labour
-        .map(
-          (labour) => `
+        <tr class="row12">
+          <td class="column1 style32 s">Wooden Counter</td>
+          <td class="column2 style27 s">Removal &amp; Packing-Restore</td>
+          <td class="column3 style8 n">1.00</td>
+          <td class="column4 style21 n">400.00</td>
+          <td class="column5 style16 f">400</td>
+        </tr>
+        <tr class="row13">
+          <td class="column1 style32 s">False Ceiling</td>
+          <td class="column2 style27 s">Removal,Disposal&amp; Loading</td>
+          <td class="column3 style8 n">2.00</td>
+          <td class="column4 style21 n">400.00</td>
+          <td class="column5 style16 f">800</td>
+        </tr>
+        <tr class="row14">
+          <td class="column1 style32 s">Duct Removal</td>
+          <td class="column2 style27 s">Removal &amp; disposal (3 ton)</td>
+          <td class="column3 style8 n">3.00</td>
+          <td class="column4 style21 n">400.00</td>
+          <td class="column5 style16 f">1200</td>
+        </tr>
+        <tr class="row15">
+          <td class="column1 style32 s">Tiles Removal</td>
+          <td class="column2 style27 s">Removal &amp; loading (3 ton)</td>
+          <td class="column3 style8 n">20.00</td>
+          <td class="column4 style21 n">400.00</td>
+          <td class="column5 style16 f">8000</td>
+        </tr>
+        <tr class="row16">
+          <td class="column1 style26 null"></td>
+          <td class="column2 style35 s style37" colspan="3">TOTAL MATERIALS&nbsp;&nbsp;</td>
+          <td class="column5 style18 f">[$am192926] #,##0.00</td>
+        </tr>
+        <tr class="row17">
+          <td class="column1 style43 null style45" colspan="5"></td>
+        </tr>
+        <tr class="row18">
+          <td class="column1 style15 s">LABOUR CHARGES</td>
+          <td class="column2 style9 s">DESIGNATION</td>
+          <td class="column3 style22 s">QTY/DAYS</td>
+          <td class="column4 style6 s">PRICE</td>
+          <td class="column5 style16 s">TOTAL</td>
+        </tr>
         <tr class="row19">
-          <td class="column1 style46 null style48" rowspan="2"></td>
-          <td class="column2 style7 s">${labour.designation}</td>
-          <td class="column3 style21 n">${labour.days.toFixed(2)}</td>
-          <td class="column4 style21 n">${labour.price.toFixed(2)}</td>
-          <td class="column5 style17 f">${labour.total.toFixed(2)}</td>
+          <td class="column1 style46 null style48" rowspan="3"></td>
+          <td class="column2 style7 s">Man power charges</td>
+          <td class="column3 style21 n">154.00</td>
+          <td class="column4 style21 n">150.00</td>
+          <td class="column5 style17 f">23100.00</td>
         </tr>
-      `
-        )
-        .join("")}
-      <tr class="row21">
-        <td class="column2 style35 s style37" colspan="3">TOTAL LABOUR &nbsp;&nbsp;</td>
-        <td class="column5 style18 f">${labourTotal.toFixed(2)}</td>
-      </tr>
-
-      <!-- Terms and conditions section - Fixed version -->
-      <tr class="row22">
-        <td class="column1 style15 s">TERMS AND CONDITIONS</td>
-        <td class="column2 style9 s">MISCELLANEOUS CHARGES</td>
-        <td class="column3 style22 s">QTY</td>
-        <td class="column4 style6 s">PRICE</td>
-        <td class="column5 style16 s">TOTAL</td>
-      </tr>
-      ${estimation.termsAndConditions
-        .map(
-          (term) => `
+        <tr class="row20">
+          <td class="column2 style7 s">Driver</td>
+          <td class="column3 style21 n">17.00</td>
+          <td class="column4 style21 n">30.00</td>
+          <td class="column5 style17 f">510.00</td>
+        </tr>
+        <tr class="row21">
+          <td class="column2 style35 s style37" colspan="3">TOTAL LABOUR &nbsp;&nbsp;</td>
+          <td class="column5 style18 f">[$am196421] #,##0.00</td>
+        </tr>
+        <tr class="row22">
+          <td class="column1 style15 s">TERMS AND CONDITIONS</td>
+          <td class="column2 style9 s">MISCELLANEOUS CHARGES</td>
+          <td class="column3 style22 s">QTY</td>
+          <td class="column4 style6 s">PRICE</td>
+          <td class="column5 style16 s">TOTAL</td>
+        </tr>
         <tr class="row23">
-          <td class="column1 style34 null"></td>
-          <td class="column2 style7 s">${term.description}</td>
-          <td class="column3 style21 n">${term.quantity.toFixed(2)}</td>
-          <td class="column4 style8 n">${term.unitPrice.toFixed(2)}</td>
-          <td class="column5 style17 f">${term.total.toFixed(2)}</td>
+          <td class="column1 style34 null style34" rowspan="2"></td>
+          <td class="column2 style7 s">Fuel Charges</td>
+          <td class="column3 style21 n">17.00</td>
+          <td class="column4 style8 n">30.00</td>
+          <td class="column5 style17 f">510.00</td>
         </tr>
-      `
-        )
-        .join("")}
-      <tr class="row24">
-        <td class="column1 style34 null"></td>
-        <td class="column2 style35 s style37" colspan="3">
-          TOTAL MISCELLANEOUS &nbsp;&nbsp;
-        </td>
-        <td class="column5 style18 f">${termsTotal.toFixed(2)}</td>
-      </tr>
-
-      <!-- Amount summary -->
-      <tr class="row25">
-        <td class="column1 style38 s style40" colspan="4" style="padding-left: 10px;">
-          ESTIMATED AMOUNT
-        </td>
-        <td class="column5 style17 f">${estimatedAmount.toFixed(2)}</td>
-      </tr>
-      <tr class="row26">
-        <td class="column1 style38 s style40" colspan="4" style="padding-left: 10px;">
-          QUOTATION AMOUNT
-        </td>
-        <td class="column5 style33 n">${
-          estimation.quotationAmount?.toFixed(2) || "0.00"
-        }</td>
-      </tr>
-      <tr class="row27">
-        <td class="column1 style57 s style59" colspan="4" style="padding-left: 10px;">PROFIT</td>
-        <td class="column5 style20 f">
-          <div style="position: relative">
-            <img
-              style="position: absolute; z-index: 1; left: 26px; top: 44px; width: 96px; height: 102px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/seal.png"
-              border="0"
-            />
-          </div>
-          ${estimation.profit?.toFixed(2) || "0.00"}
-        </td>
-      </tr>
-
-      <!-- Approval section -->
-      <tr class="row28">
-        <td class="column1 style28 s">Prepared By: ${
-          estimation.preparedBy?.name || "N/A"
-        }</td>
-        <td class="column2 style29 s">Checked By: ${
-          estimation.checkedBy?.name || "N/A"
-        }</td>
-        <td class="column3 style60 s style61" colspan="2">
-          Approved by: ${estimation.approvedBy?.name || "N/A"}
-        </td>
-        <td class="column5 style62 null style63" rowspan="2"></td>
-      </tr>
-      <tr class="row29">
-        <td class="column1 style31 null">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 104px; top: 12px; width: 55px; height: 32px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/admin.png"
-              border="0"
-            />
-          </div>
-        </td>
-        <td class="column2 style30 null">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 50px; top: 12px; width: 80px; height: 36px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/eng.png"
-              border="0"
-            />
-          </div>
-        </td>
-        <td class="column3 style60 null style61" colspan="2">
-          <div style="position: relative">
-            <img
-              style="z-index: 1; left: 108px; top: 6px; width: 87px; height: 42px;"
-              src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/ma.png"
-              border="0"
-            />
-          </div>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</body>
-    </html>
-  `;
-
-    // Generate PDF
-    const browser = await puppeteer.launch({
-      headless: "new",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
-
-    try {
-      const page = await browser.newPage();
-
-      await page.setViewport({
-        width: 1200,
-        height: 1800,
-        deviceScaleFactor: 1,
-      });
-
-      await page.setContent(htmlContent, {
-        waitUntil: ["load", "networkidle0", "domcontentloaded"],
-        timeout: 30000,
-      });
-
-      // Additional wait for dynamic content
-      await page.waitForSelector("body", { timeout: 5000 });
-
-      const pdfBuffer = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        margin: {
-          top: "0.5in",
-          right: "0.5in",
-          bottom: "0.5in",
-          left: "0.5in",
-        },
-        preferCSSPageSize: true,
-      });
-
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=estimation-${estimation.estimationNumber}.pdf`
-      );
-      res.send(pdfBuffer);
-    } finally {
-      await browser.close();
-    }
-  }
-);
+        <tr class="row24">
+          <td class="column2 style35 s style37" colspan="3">
+            TOTAL MISCELLANEOUS &nbsp;&nbsp;
+          </td>
+          <td class="column5 style18 f">[$am190124] #,##0.00</td>
+        </tr>
+        <tr class="row25">
+          <td class="column1 style38 s style40" colspan="4" style="padding-left: 10px;">
+            ESTIMATED AMOUNT
+          </td>
+          <td class="column5 style17 f">34920.00</td>
+        </tr>
+        <tr class="row26">
+          <td class="column1 style38 s style40" colspan="4" style="padding-left: 10px;">
+            QUOTATION AMOUNT
+          </td>
+          <td class="column5 style33 n">56,782.72</td>
+        </tr>
+        <tr class="row27">
+          <td class="column1 style57 s style59" colspan="4" style="padding-left: 10px;">PROFIT</td>
+          <td class="column5 style20 f">
+            <div style="position: relative">
+              <img
+                style="
+                  position: absolute;
+                  z-index: 1;
+                  left: 26px;
+                  top: 44px;
+                  width: 96px;
+                  height: 102px;
+                "
+                src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/seal.png"
+                border="0"
+              />
+            </div>
+            [$pm19598] #,##0.00
+          </td>
+        </tr>
+        <tr class="row28">
+          <td class="column1 style28 s">Prepared By: Admin</td>
+          <td class="column2 style29 s">Checked By: Engineer</td>
+          <td class="column3 style60 s style61" colspan="2">
+            Approved by: Managing Director
+          </td>
+          <td class="column5 style62 null style63" rowspan="2"></td>
+        </tr>
+        <tr class="row29">
+          <td class="column1 style31 null">
+            <div style="position: relative">
+              <img
+                style="
+          
+                  z-index: 1;
+                  left: 104px;
+                  top: 12px;
+                  width: 55px;
+                  height: 32px;
+                "
+             src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/admin.png"
+                border="0"
+              />
+            </div>
+          </td>
+          <td class="column2 style30 null">
+            <div style="position: relative">
+              <img
+                style="
+        
+                  z-index: 1;
+                  left: 50px;
+                  top: 12px;
+                  width: 80px;
+                  height: 36px;
+                "
+                src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/eng.png"
+                border="0"
+              />
+            </div>
+          </td>
+          <td class="column3 style60 null style61" colspan="2">
+            <div style="position: relative">
+              <img
+                style="
+                  z-index: 1;
+                  left: 108px;
+                  top: 6px;
+                  width: 87px;
+                  height: 42px;
+                "
+                src="https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/ma.png"
+                border="0"
+              />
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>

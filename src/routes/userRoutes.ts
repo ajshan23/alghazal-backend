@@ -8,6 +8,7 @@ import {
   login,
 } from "../controllers/userController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
+import { upload } from "../config/multer";
 
 const router = express.Router();
 
@@ -16,7 +17,15 @@ router.post("/login", login);
 router.use(authenticate);
 
 // Create user - Admin only
-router.post("/", authorize(["admin", "super_admin"]), createUser);
+router.post(
+  "/",
+  authorize(["admin", "super_admin"]),
+  upload.fields([
+    { name: "profileImage", maxCount: 1 },
+    { name: "signatureImage", maxCount: 1 },
+  ]),
+  createUser
+);
 
 // Get all users - Admin + Finance
 router.get("/", authorize(["admin", "super_admin", "finance"]), getUsers);

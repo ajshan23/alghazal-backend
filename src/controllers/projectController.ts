@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/apiHandlerHelpers";
 import { ApiError } from "../utils/apiHandlerHelpers";
 import { Project } from "../models/projectModel";
 import { Client } from "../models/clientModel";
+import { Estimation } from "../models/estimationModel";
 
 // Status transition validation
 const validStatusTransitions: Record<string, string[]> = {
@@ -124,12 +125,11 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
     )
   );
 });
-
 export const getProject = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
 
   const project = await Project.findById(id)
-    .populate("client", "clientName clientAddress mobileNumber")
+    .populate("client")
     .populate("createdBy", "firstName lastName email")
     .populate("updatedBy", "firstName lastName email");
 
@@ -137,9 +137,18 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(404, "Project not found");
   }
 
+  // Check if an estimation exists for this project
+  const estimation = await Estimation.findOne({ project: id }).select("_id");
+
+  // Create the response object
+  const responseData = {
+    ...project.toObject(),
+    estimationId: estimation?._id || null,
+  };
+
   res
     .status(200)
-    .json(new ApiResponse(200, project, "Project retrieved successfully"));
+    .json(new ApiResponse(200, responseData, "Project retrieved successfully"));
 });
 
 export const updateProject = asyncHandler(

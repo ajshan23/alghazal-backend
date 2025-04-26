@@ -7,6 +7,7 @@ import {
   getEstimationDetails,
   updateEstimation,
   deleteEstimation,
+  generateEstimationPdf,
 } from "../controllers/estimationController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 
@@ -77,4 +78,5 @@ router.delete(
   deleteEstimation
 );
 
+router.get("/:id/estimation-pdf", generateEstimationPdf);
 export default router;
