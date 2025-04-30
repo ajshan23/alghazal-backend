@@ -128,6 +128,7 @@ export const updateClient = asyncHandler(
       mobileNumber,
       telephoneNumber,
       trnNumber,
+      email,
     } = req.body;
 
     const client = await Client.findById(id);
@@ -164,6 +165,7 @@ export const updateClient = asyncHandler(
             ? telephoneNumber
             : client.telephoneNumber,
         trnNumber: trnNumber || client.trnNumber,
+        email: email || client.email,
       },
       { new: true }
     );
