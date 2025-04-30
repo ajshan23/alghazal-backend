@@ -5,6 +5,7 @@ import { ApiError } from "../utils/apiHandlerHelpers";
 import { Project } from "../models/projectModel";
 import { Client } from "../models/clientModel";
 import { Estimation } from "../models/estimationModel";
+import { User } from "@/models/userModel";
 
 // Status transition validation
 const validStatusTransitions: Record<string, string[]> = {
@@ -131,7 +132,8 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
   const project = await Project.findById(id)
     .populate("client")
     .populate("createdBy", "firstName lastName email")
-    .populate("updatedBy", "firstName lastName email");
+    .populate("updatedBy", "firstName lastName email")
+    .populate("assignedTo", "-password");
 
   if (!project) {
     throw new ApiError(404, "Project not found");
@@ -252,11 +254,12 @@ export const assignProject = asyncHandler(
     if (!project) {
       throw new ApiError(400, "Project not found");
     }
-    const engineerExists = await Project.findById(assignedTo);
+    const engineerExists = await User.findById(assignedTo);
     if (!engineerExists) {
       throw new ApiError(400, "Engineer not found");
     }
     project.assignedTo = assignedTo;
+    await project.save();
     res
       .status(200)
       .json(new ApiResponse(200, {}, "Project assigned updated successfully"));

@@ -6,6 +6,8 @@ import { Estimation } from "../models/estimationModel";
 import { Project } from "../models/projectModel";
 import { Types } from "mongoose";
 import puppeteer from "puppeteer";
+import { Client } from "../models/clientModel";
+import { Comment } from "../models/commentModel";
 
 // Helper function to generate document numbers
 const generateEstimationNumber = async () => {
@@ -132,66 +134,51 @@ export const createEstimation = asyncHandler(
       );
   }
 );
-export const markAsChecked = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const { comment } = req.body;
-    const checkedById = req.user?.userId;
-
-    if (!checkedById) {
-      throw new ApiError(404, "User not found");
-    }
-
-    const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
-
-    if (estimation.isChecked) {
-      throw new ApiError(400, "Estimation is already checked");
-    }
-
-    estimation.isChecked = true;
-    estimation.checkedBy = new Types.ObjectId(checkedById); // Convert string to ObjectId
-    if (comment) estimation.approvalComment = comment;
-
-    await estimation.save();
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, estimation, "Estimation marked as checked"));
-  }
-);
-
 export const approveEstimation = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { comment, approved } = req.body;
-    const approvedBy = req.user?.userId;
-    if (!approvedBy) {
-      throw new ApiError(404, "User not found");
-    }
-    if (typeof approved !== "boolean") {
-      throw new ApiError(400, "Approval status is required");
+    const { comment, isApproved } = req.body; // isApproved: boolean
+    const userId = req.user?.userId;
+
+    // Validate input
+    if (!userId) throw new ApiError(401, "Unauthorized");
+    if (typeof isApproved !== "boolean") {
+      throw new ApiError(400, "isApproved must be a boolean");
     }
 
     const estimation = await Estimation.findById(id);
-    if (!estimation) {
-      throw new ApiError(404, "Estimation not found");
-    }
+    if (!estimation) throw new ApiError(404, "Estimation not found");
 
+    // Check prerequisites
     if (!estimation.isChecked) {
-      throw new ApiError(400, "Estimation must be checked before approval");
+      throw new ApiError(
+        400,
+        "Estimation must be checked before approval/rejection"
+      );
     }
-
-    if (estimation.isApproved) {
+    if (estimation.isApproved && isApproved) {
       throw new ApiError(400, "Estimation is already approved");
     }
 
-    estimation.isApproved = approved;
-    estimation.approvedBy = new Types.ObjectId(approvedBy);
+    // Create activity log
+    await Comment.create({
+      content: comment || `Estimation ${isApproved ? "approved" : "rejected"}`,
+      user: userId,
+      project: estimation.project,
+      actionType: isApproved ? "approval" : "rejection",
+    });
+
+    // Update estimation
+    estimation.isApproved = isApproved;
+    estimation.approvedBy = isApproved ? userId : undefined;
     estimation.approvalComment = comment;
     await estimation.save();
+
+    // Update project status
+    await Project.findByIdAndUpdate(estimation.project, {
+      status: isApproved ? "quotation_approved" : "quotation_rejected",
+      updatedBy: userId,
+    });
 
     res
       .status(200)
@@ -199,7 +186,63 @@ export const approveEstimation = asyncHandler(
         new ApiResponse(
           200,
           estimation,
-          `Estimation ${approved ? "approved" : "rejected"}`
+          `Estimation ${isApproved ? "approved" : "rejected"} successfully`
+        )
+      );
+  }
+);
+
+export const markAsChecked = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { comment, isChecked } = req.body; // isChecked: boolean
+    const userId = req.user?.userId;
+
+    // Validate input
+    if (!userId) throw new ApiError(401, "Unauthorized");
+    if (typeof isChecked !== "boolean") {
+      throw new ApiError(400, "isChecked must be a boolean");
+    }
+
+    const estimation = await Estimation.findById(id);
+    if (!estimation) throw new ApiError(404, "Estimation not found");
+
+    // Check prerequisites
+    if (estimation.isChecked && isChecked) {
+      throw new ApiError(400, "Estimation is already checked");
+    }
+
+    // Create activity log
+    await Comment.create({
+      content:
+        comment ||
+        `Estimation ${isChecked ? "checked" : "rejected during check"}`,
+      user: userId,
+      project: estimation.project,
+      actionType: isChecked ? "check" : "rejection",
+    });
+
+    // Update estimation
+    estimation.isChecked = isChecked;
+    estimation.checkedBy = isChecked ? userId : undefined;
+    if (comment) estimation.approvalComment = comment;
+    await estimation.save();
+
+    // Update project status if rejected
+    if (!isChecked) {
+      await Project.findByIdAndUpdate(estimation.project, {
+        status: "draft",
+        updatedBy: userId,
+      });
+    }
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          estimation,
+          `Estimation ${isChecked ? "checked" : "rejected"} successfully`
         )
       );
   }
@@ -233,15 +276,23 @@ export const getEstimationDetails = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    const estimation = await Estimation.findById(id)
+    const estimationE = await Estimation.findById(id)
       .populate("project", "projectName client")
       .populate("preparedBy", "firstName lastName")
       .populate("checkedBy", "firstName lastName")
       .populate("approvedBy", "firstName lastName");
 
-    if (!estimation) {
+    if (!estimationE) {
       throw new ApiError(404, "Estimation not found");
     }
+    const clientId = estimationE?.project?.client;
+    console.log(clientId);
+
+    if (!clientId) {
+      throw new ApiError(400, "Client information not found");
+    }
+    const client = await Client.findById(clientId);
+    const estimation = { ...estimationE._doc, client };
 
     res
       .status(200)
