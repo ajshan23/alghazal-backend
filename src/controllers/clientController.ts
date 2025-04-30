@@ -13,6 +13,7 @@ export const createClient = asyncHandler(
       mobileNumber,
       telephoneNumber,
       trnNumber,
+      email,
     } = req.body;
 
     // Validate required fields
@@ -21,7 +22,8 @@ export const createClient = asyncHandler(
       !clientAddress ||
       !pincode ||
       !mobileNumber ||
-      !trnNumber
+      !trnNumber ||
+      !email
     ) {
       throw new ApiError(
         400,
@@ -43,6 +45,7 @@ export const createClient = asyncHandler(
       telephoneNumber,
       trnNumber,
       createdBy: req.user?.userId,
+      email: email,
     });
 
     res

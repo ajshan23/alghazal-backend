@@ -321,9 +321,9 @@ export const generateEstimationPdf = asyncHandler(
           select: "clientName clientAddress",
         },
       })
-      .populate("preparedBy", "name signatureImage")
-      .populate("checkedBy", "name signatureImage")
-      .populate("approvedBy", "name signatureImage");
+      .populate("preparedBy", "firstName signatureImage")
+      .populate("checkedBy", "firstName signatureImage")
+      .populate("approvedBy", "firstName signatureImage");
     console.log(estimation);
 
     if (!estimation) {
@@ -2603,13 +2603,13 @@ ${estimation.termsAndConditions
       <!-- Approval section -->
       <tr class="row28">
         <td class="column1 style28 s">Prepared By: ${
-          estimation.preparedBy?.name || "N/A"
+          estimation.preparedBy?.firstName || "N/A"
         }</td>
         <td class="column2 style29 s">Checked By: ${
-          estimation.checkedBy?.name || "N/A"
+          estimation.checkedBy?.firstName || "N/A"
         }</td>
         <td class="column3 style60 s style61" colspan="2">
-          Approved by: ${estimation.approvedBy?.name || "N/A"}
+          Approved by: ${estimation.approvedBy?.firstName || "N/A"}
         </td>
         <td class="column5 style62 null style63" rowspan="2"></td>
       </tr>

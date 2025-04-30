@@ -7,6 +7,7 @@ export interface IClient extends Document {
   mobileNumber: string;
   telephoneNumber?: string;
   trnNumber: string;
+  email:string;
   createdBy: Types.ObjectId;
   createdAt?: Date;
   updatedAt?: Date;
