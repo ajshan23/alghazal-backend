@@ -47,6 +47,10 @@ const clientSchema = new Schema<IClient>(
         message: (props: any) => `${props.value} is not a valid phone number!`,
       },
     },
+    email:{
+      type:String,
+      trim:true,
+    },
     telephoneNumber: {
       type: String,
       trim: true,

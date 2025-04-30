@@ -6,6 +6,7 @@ import {
   updateUser,
   deleteUser,
   login,
+  getActiveEngineers,
 } from "../controllers/userController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 import { upload } from "../config/multer";
@@ -15,6 +16,12 @@ const router = express.Router();
 router.post("/login", login);
 // Apply authentication to all routes
 router.use(authenticate);
+//
+router.get(
+  "/engineers",
+  authorize(["admin", "super_admin", "finance"]),
+  getActiveEngineers
+);
 
 // Create user - Admin only
 router.post(

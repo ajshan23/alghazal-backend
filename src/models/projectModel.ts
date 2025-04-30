@@ -23,9 +23,10 @@ export interface IProject extends Document {
     | "project_closed"
     | "on_hold"
     | "cancelled";
-  progress: number; // 0-100 percentage
+  progress: number; 
   createdBy: Types.ObjectId;
   updatedBy?: Types.ObjectId;
+  assignedTo?: Types.ObjectId;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -91,6 +92,10 @@ const projectSchema = new Schema<IProject>(
       required: true,
     },
     updatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    assignedTo: {
       type: Schema.Types.ObjectId,
       ref: "User",
     },

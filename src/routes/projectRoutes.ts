@@ -7,6 +7,7 @@ import {
   updateProjectStatus,
   updateProjectProgress,
   deleteProject,
+  assignProject,
 } from "../controllers/projectController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 
@@ -34,7 +35,11 @@ router.put(
   authorize(["admin", "super_admin", "engineer"]),
   updateProject
 );
-
+router.post(
+  "/:id/assign",
+  authorize(["admin", "super_admin", "finance"]),
+  assignProject
+);
 // Update project status
 router.patch(
   "/:id/status",

@@ -343,3 +343,27 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     )
   );
 });
+
+export const getActiveEngineers = asyncHandler(
+  async (req: Request, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const engineers = await User.find({
+      role: "engineer",
+      isActive: true,
+    }).select("-v -password");
+
+    // Return response with pagination metadata
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          engineers,
+        },
+        "Users retrieved successfully"
+      )
+    );
+  }
+);

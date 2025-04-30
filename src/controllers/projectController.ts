@@ -241,6 +241,28 @@ export const updateProjectStatus = asyncHandler(
   }
 );
 
+export const assignProject = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { assignedTo } = req.body;
+    if (!assignedTo || !id) {
+      throw new ApiError(400, "AssignedTo is required");
+    }
+    const project = await Project.findById(id);
+    if (!project) {
+      throw new ApiError(400, "Project not found");
+    }
+    const engineerExists = await Project.findById(assignedTo);
+    if (!engineerExists) {
+      throw new ApiError(400, "Engineer not found");
+    }
+    project.assignedTo = assignedTo;
+    res
+      .status(200)
+      .json(new ApiResponse(200, {}, "Project assigned updated successfully"));
+  }
+);
+
 export const updateProjectProgress = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
