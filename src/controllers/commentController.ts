@@ -32,3 +32,23 @@ export const addProjectComment = asyncHandler(
       );
   }
 );
+
+export const getProjectActivity = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+
+    const activities = await Comment.find({ project: projectId })
+      .populate("user", "firstName lastName profilePicture")
+      .sort({ createdAt: -1 });
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          activities,
+          "Project activity retrieved successfully"
+        )
+      );
+  }
+);

@@ -14,6 +14,8 @@ import userRouter from "./routes/userRoutes";
 import estimationRouter from "./routes/estimationRoutes";
 import clientRouter from "./routes/clientRoutes";
 import projectRouter from "./routes/projectRoutes";
+import commentRouter from "./routes/commentRoutes";
+
 import { connectDb } from "./config/db";
 dotenv.config();
 
@@ -43,6 +45,7 @@ app.use("/api/user", userRouter);
 app.use("/api/estimation", estimationRouter);
 app.use("/api/client", clientRouter);
 app.use("/api/project", projectRouter);
+app.use("/api/comment", commentRouter);
 app.use(errorHandler as ErrorRequestHandler);
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello, Secure and Logged World!");
