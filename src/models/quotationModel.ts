@@ -6,7 +6,7 @@ import { IEstimation } from "./estimationModel";
 interface IQuotationItem {
   description: string;
   uom: string;
-  uomImage?: {
+  image?: {
     url: string;
     key: string;
     mimetype: string;
@@ -48,7 +48,7 @@ const quotationItemSchema = new Schema<IQuotationItem>({
     required: [true, "Unit of measurement is required"],
     trim: true,
   },
-  uomImage: {
+  image: {
     url: String,
     key: String,
     mimetype: String,
@@ -76,7 +76,7 @@ const quotationSchema = new Schema<IQuotation>(
       type: Schema.Types.ObjectId,
       ref: "Project",
       required: true,
-      unique: true, // Enforces one quotation per project
+      unique: true,
     },
     estimation: {
       type: Schema.Types.ObjectId,
@@ -155,7 +155,6 @@ const quotationSchema = new Schema<IQuotation>(
   { timestamps: true }
 );
 
-// Auto-calculate amounts
 quotationSchema.pre<IQuotation>("save", function (next) {
   this.subtotal = this.items.reduce((sum, item) => sum + item.totalPrice, 0);
   this.vatAmount = this.subtotal * (this.vatPercentage / 100);
@@ -163,8 +162,7 @@ quotationSchema.pre<IQuotation>("save", function (next) {
   next();
 });
 
-// Indexes
-quotationSchema.index({ project: 1, unique: true });
+quotationSchema.index({ project: 1 });
 quotationSchema.index({ estimation: 1 });
 quotationSchema.index({ isApproved: 1 });
 

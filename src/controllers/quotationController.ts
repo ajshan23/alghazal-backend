@@ -5,11 +5,11 @@ import { ApiError } from "../utils/apiHandlerHelpers";
 import { Quotation } from "../models/quotationModel";
 import { Project } from "../models/projectModel";
 import { Estimation } from "../models/estimationModel";
-import { uploadUnitImage, deleteFileFromS3 } from "../utils/uploadConf";
+import { uploadItemImage, deleteFileFromS3 } from "../utils/uploadConf";
 
 const generateQuotationNumber = async () => {
   const count = await Quotation.countDocuments();
-  return `QUO-${new Date().getFullYear()}-${(count + 1)
+  return `QTN-${new Date().getFullYear()}-${(count + 1)
     .toString()
     .padStart(4, "0")}`;
 };
@@ -26,23 +26,27 @@ export const createQuotation = asyncHandler(
       vatPercentage = 5,
     } = req.body;
 
-    // Check for existing quotation
     const exists = await Quotation.findOne({ project: projectId });
     if (exists) throw new ApiError(400, "Project already has a quotation");
 
-    // Process items with images
     const processedItems = await Promise.all(
       items.map(async (item: any, index: number) => {
-        const fileKey = `items[${index}][uomImage]`;
-        if (req.files?.[fileKey]) {
-          const uploadResult = await uploadUnitImage(req.files[fileKey][0]);
-          if (uploadResult.uploadData) item.uomImage = uploadResult.uploadData;
+        // Type the files object properly
+        const files = req.files as {
+          [fieldname: string]: Express.Multer.File[];
+        };
+        const fileKey = `items[${index}][image]`;
+
+        if (files && files[fileKey] && files[fileKey][0]) {
+          const uploadResult = await uploadItemImage(files[fileKey][0]);
+          if (uploadResult.uploadData) {
+            item.image = uploadResult.uploadData;
+          }
         }
         item.totalPrice = item.quantity * item.unitPrice;
         return item;
       })
     );
-
     const quotation = await Quotation.create({
       project: projectId,
       estimation: estimationId,
@@ -84,17 +88,29 @@ export const updateQuotation = asyncHandler(
     const quotation = await Quotation.findById(id);
     if (!quotation) throw new ApiError(404, "Quotation not found");
 
-    // Process item updates
     if (items) {
       quotation.items = await Promise.all(
         items.map(async (item: any, index: number) => {
-          const fileKey = `items[${index}][uomImage]`;
-          if (req.files?.[fileKey]) {
-            if (item.uomImage?.key) await deleteFileFromS3(item.uomImage.key);
-            const uploadResult = await uploadUnitImage(req.files[fileKey][0]);
-            if (uploadResult.uploadData)
-              item.uomImage = uploadResult.uploadData;
+          // Type the files object properly
+          const files = req.files as
+            | { [fieldname: string]: Express.Multer.File[] }
+            | undefined;
+          const fileKey = `items[${index}][image]`;
+
+          if (files?.[fileKey]?.[0]) {
+            // Delete old image if it exists
+            if (item.image?.key) {
+              await deleteFileFromS3(item.image.key);
+            }
+
+            // Upload new image
+            const uploadResult = await uploadItemImage(files[fileKey][0]);
+            if (uploadResult.uploadData) {
+              item.image = uploadResult.uploadData;
+            }
           }
+
+          // Calculate total price
           item.totalPrice = item.quantity * item.unitPrice;
           return item;
         })
@@ -146,12 +162,9 @@ export const deleteQuotation = asyncHandler(
 
     if (!quotation) throw new ApiError(404, "Quotation not found");
 
-    // Cleanup images
     await Promise.all(
       quotation.items.map((item) =>
-        item.uomImage?.key
-          ? deleteFileFromS3(item.uomImage.key)
-          : Promise.resolve()
+        item.image?.key ? deleteFileFromS3(item.image.key) : Promise.resolve()
       )
     );
 

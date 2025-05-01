@@ -7,22 +7,19 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Initialize S3 client
 const s3 = new S3Client({
   region: "ap-south-1",
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "a",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "a+a",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
   },
 });
 
-// Constants
 const BUCKET_NAME = "krishnadas-test-1";
 const USER_IMAGES_FOLDER = "user-images";
-const UNIT_OF_MEASURMENT_FOLDER = "uom-images";
+const ITEM_IMAGES_FOLDER = "item-images";
 const SIGNATURES_FOLDER = "signatures";
 
-// Generate a unique file name for uploaded files
 function generateUniqueFileName(file: Express.Multer.File): string {
   const extension = path.extname(file.originalname);
   const filename = path.basename(file.originalname, extension);
@@ -30,7 +27,6 @@ function generateUniqueFileName(file: Express.Multer.File): string {
   return `${filename}-${uniqueSuffix}${extension}`;
 }
 
-// Core upload function with folder support
 async function uploadFileToS3(
   file: Express.Multer.File,
   folder?: string
@@ -63,7 +59,6 @@ async function uploadFileToS3(
   };
 }
 
-// Process an image file (resize and compress)
 async function processImage(
   file: Express.Multer.File,
   options?: { width?: number; height?: number; format?: "jpeg" | "png" }
@@ -86,7 +81,6 @@ async function processImage(
   return processor.toBuffer();
 }
 
-// Compress a PDF file
 async function compressPDFBuffer(pdfBuffer: Buffer): Promise<Buffer> {
   try {
     const pdfDoc = await PDFDocument.load(pdfBuffer);
@@ -98,7 +92,6 @@ async function compressPDFBuffer(pdfBuffer: Buffer): Promise<Buffer> {
   }
 }
 
-// Upload user profile image (optimized for profile pictures)
 export async function uploadUserProfileImage(
   file: Express.Multer.File
 ): Promise<{
@@ -107,13 +100,11 @@ export async function uploadUserProfileImage(
   uploadData?: { url: string; key: string; mimetype: string };
 }> {
   try {
-    // Process the image (square crop and compress)
     const processedFileBuffer = await sharp(file.buffer)
       .resize({ width: 500, height: 500, fit: "cover" })
       .jpeg({ quality: 80, mozjpeg: true })
       .toBuffer();
 
-    // Create a new file object with processed buffer
     const processedFile = {
       ...file,
       buffer: processedFileBuffer,
@@ -139,19 +130,17 @@ export async function uploadUserProfileImage(
   }
 }
 
-export async function uploadUnitImage(file: Express.Multer.File): Promise<{
+export async function uploadItemImage(file: Express.Multer.File): Promise<{
   success: boolean;
   message: string;
   uploadData?: { url: string; key: string; mimetype: string };
 }> {
   try {
-    // Process the image (square crop and compress)
     const processedFileBuffer = await sharp(file.buffer)
-      .resize({ width: 400, height: 150, fit: "cover" })
+      .resize({ width: 800, height: 600, fit: "inside" })
       .jpeg({ quality: 80, mozjpeg: true })
       .toBuffer();
 
-    // Create a new file object with processed buffer
     const processedFile = {
       ...file,
       buffer: processedFileBuffer,
@@ -160,31 +149,29 @@ export async function uploadUnitImage(file: Express.Multer.File): Promise<{
 
     const uploadResult = await uploadFileToS3(
       processedFile,
-      UNIT_OF_MEASURMENT_FOLDER
+      ITEM_IMAGES_FOLDER
     );
 
     return {
       success: true,
-      message: "uom image uploaded successfully",
+      message: "Item image uploaded successfully",
       uploadData: uploadResult,
     };
   } catch (err) {
-    console.error("Error uploading uom  image:", err);
+    console.error("Error uploading item image:", err);
     return {
       success: false,
-      message: " uom image upload failed",
+      message: "Item image upload failed",
     };
   }
 }
 
-// Upload signature image (optimized for signatures)
 export async function uploadSignatureImage(file: Express.Multer.File): Promise<{
   success: boolean;
   message: string;
   uploadData?: { url: string; key: string; mimetype: string };
 }> {
   try {
-    // Process the signature (transparent background)
     const processedFileBuffer = await sharp(file.buffer)
       .resize({
         width: 400,
@@ -195,7 +182,6 @@ export async function uploadSignatureImage(file: Express.Multer.File): Promise<{
       .png({ quality: 90, compressionLevel: 9 })
       .toBuffer();
 
-    // Create a new file object with processed buffer
     const processedFile = {
       ...file,
       buffer: processedFileBuffer,
@@ -218,7 +204,6 @@ export async function uploadSignatureImage(file: Express.Multer.File): Promise<{
   }
 }
 
-// Handle single file upload (generic)
 export async function handleSingleFileUpload(
   file: Express.Multer.File
 ): Promise<{
@@ -229,14 +214,12 @@ export async function handleSingleFileUpload(
   try {
     let processedFileBuffer: Buffer | undefined;
 
-    // Process based on file type
     if (file.mimetype.startsWith("image/")) {
       processedFileBuffer = await processImage(file);
     } else if (file.mimetype === "application/pdf") {
       processedFileBuffer = await compressPDFBuffer(file.buffer);
     }
 
-    // Use processed or original buffer
     const finalFile = {
       ...file,
       buffer: processedFileBuffer || file.buffer,
@@ -258,7 +241,6 @@ export async function handleSingleFileUpload(
   }
 }
 
-// Handle multiple file uploads (generic)
 export async function handleMultipleFileUploads(
   files: Express.Multer.File[]
 ): Promise<{
@@ -300,7 +282,6 @@ export async function handleMultipleFileUploads(
   }
 }
 
-// Delete file from S3
 export async function deleteFileFromS3(key: string): Promise<{
   success: boolean;
   message: string;
@@ -327,11 +308,10 @@ export async function deleteFileFromS3(key: string): Promise<{
   }
 }
 
-// Utility to extract key from S3 URL
 export function getS3KeyFromUrl(url: string): string {
   try {
     const urlObj = new URL(url);
-    return decodeURIComponent(urlObj.pathname.substring(1)); // Remove leading slash
+    return decodeURIComponent(urlObj.pathname.substring(1));
   } catch (err) {
     console.error("Error parsing S3 URL:", err);
     throw new Error("Invalid S3 URL");
@@ -340,6 +320,7 @@ export function getS3KeyFromUrl(url: string): string {
 
 export default {
   uploadUserProfileImage,
+  uploadItemImage,
   uploadSignatureImage,
   handleSingleFileUpload,
   handleMultipleFileUploads,

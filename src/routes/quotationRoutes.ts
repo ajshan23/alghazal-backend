@@ -13,37 +13,32 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Create (engineers/admins)
 router.post(
   "/",
   authorize(["admin", "super_admin", "engineer"]),
-  upload.any(), // Handles dynamic item images
+  upload.any(),
   createQuotation
 );
 
-// Get by project ID
 router.get(
   "/project/:projectId",
   authorize(["admin", "super_admin", "engineer", "finance"]),
   getQuotationByProject
 );
 
-// Update (engineers/admins)
 router.put(
   "/:id",
   authorize(["admin", "super_admin", "engineer"]),
-  upload.any(), // Handles dynamic item images
+  upload.any(),
   updateQuotation
 );
 
-// Approve/reject (admins only)
 router.patch(
   "/:id/approval",
   authorize(["admin", "super_admin"]),
   approveQuotation
 );
 
-// Delete (admins only)
 router.delete("/:id", authorize(["admin", "super_admin"]), deleteQuotation);
 
 export default router;
