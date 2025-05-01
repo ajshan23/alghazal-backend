@@ -19,6 +19,7 @@ const s3 = new S3Client({
 // Constants
 const BUCKET_NAME = "krishnadas-test-1";
 const USER_IMAGES_FOLDER = "user-images";
+const UNIT_OF_MEASURMENT_FOLDER = "uom-images";
 const SIGNATURES_FOLDER = "signatures";
 
 // Generate a unique file name for uploaded files
@@ -134,6 +135,44 @@ export async function uploadUserProfileImage(
     return {
       success: false,
       message: "User profile image upload failed",
+    };
+  }
+}
+
+export async function uploadUnitImage(file: Express.Multer.File): Promise<{
+  success: boolean;
+  message: string;
+  uploadData?: { url: string; key: string; mimetype: string };
+}> {
+  try {
+    // Process the image (square crop and compress)
+    const processedFileBuffer = await sharp(file.buffer)
+      .resize({ width: 400, height: 150, fit: "cover" })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+
+    // Create a new file object with processed buffer
+    const processedFile = {
+      ...file,
+      buffer: processedFileBuffer,
+      mimetype: "image/jpeg",
+    };
+
+    const uploadResult = await uploadFileToS3(
+      processedFile,
+      UNIT_OF_MEASURMENT_FOLDER
+    );
+
+    return {
+      success: true,
+      message: "uom image uploaded successfully",
+      uploadData: uploadResult,
+    };
+  } catch (err) {
+    console.error("Error uploading uom  image:", err);
+    return {
+      success: false,
+      message: " uom image upload failed",
     };
   }
 }

@@ -38,7 +38,7 @@ export const getProjectActivity = asyncHandler(
     const { projectId } = req.params;
 
     const activities = await Comment.find({ project: projectId })
-      .populate("user", "firstName lastName profilePicture")
+      .populate("user", "firstName lastName profileImage")
       .sort({ createdAt: -1 });
 
     res

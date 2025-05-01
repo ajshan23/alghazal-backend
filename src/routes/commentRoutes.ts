@@ -12,7 +12,7 @@ const router = express.Router();
 router.use(authenticate);
 
 // Get client by ID
-router.get("/:id", addProjectComment);
-router.get("/:id", getProjectActivity);
+router.get("/:projectId", addProjectComment);
+router.post("/:projectId", getProjectActivity);
 
 export default router;
