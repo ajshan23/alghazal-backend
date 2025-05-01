@@ -1,8 +1,10 @@
 import express from "express";
 import {
   createQuotation,
-  getQuotation,
-  updateQuotationItemImage,
+  getQuotationByProject,
+  updateQuotation,
+  approveQuotation,
+  deleteQuotation,
 } from "../controllers/quotationController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 import { upload } from "../config/multer";
@@ -11,27 +13,37 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Create quotation
+// Create (engineers/admins)
 router.post(
   "/",
   authorize(["admin", "super_admin", "engineer"]),
-  upload.any(), // Accepts multiple files with field names like "item-0-unitImage"
+  upload.any(), // Handles dynamic item images
   createQuotation
 );
 
-// Get quotation
+// Get by project ID
 router.get(
-  "/:id",
+  "/project/:projectId",
   authorize(["admin", "super_admin", "engineer", "finance"]),
-  getQuotation
+  getQuotationByProject
 );
 
-// Update item image
+// Update (engineers/admins)
 router.put(
-  "/:quotationId/items/:itemIndex/image",
+  "/:id",
   authorize(["admin", "super_admin", "engineer"]),
-  upload.single("unitImage"),
-  updateQuotationItemImage
+  upload.any(), // Handles dynamic item images
+  updateQuotation
 );
+
+// Approve/reject (admins only)
+router.patch(
+  "/:id/approval",
+  authorize(["admin", "super_admin"]),
+  approveQuotation
+);
+
+// Delete (admins only)
+router.delete("/:id", authorize(["admin", "super_admin"]), deleteQuotation);
 
 export default router;
