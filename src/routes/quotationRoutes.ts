@@ -13,13 +13,23 @@ const router = express.Router();
 
 router.use(authenticate);
 
+// Add debugging middleware before upload
 router.post(
   "/",
   authorize(["admin", "super_admin", "engineer"]),
+  (req, res, next) => {
+    console.log("Content-Type header:", req.headers["content-type"]);
+    next();
+  },
   upload.any(),
+  (req, res, next) => {
+    console.log("Multer processed files:", req.files);
+    next();
+  },
   createQuotation
 );
 
+// ... other routes
 router.get(
   "/project/:projectId",
   authorize(["admin", "super_admin", "engineer", "finance"]),

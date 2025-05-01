@@ -16,37 +16,74 @@ const generateQuotationNumber = async () => {
 
 export const createQuotation = asyncHandler(
   async (req: Request, res: Response) => {
-    const {
-      projectId,
-      estimationId,
-      validUntil,
-      scopeOfWork,
-      items,
-      termsAndConditions,
-      vatPercentage = 5,
-    } = req.body;
+    // Debugging logs
+    console.log("Request body:", req.body);
+    console.log("Request files:", req.files);
 
+    if (!req.files || !Array.isArray(req.files)) {
+      throw new ApiError(400, "No files were uploaded");
+    }
+
+    // Parse the JSON data from form-data
+    let jsonData;
+    try {
+      jsonData = JSON.parse(req.body.data);
+    } catch (error) {
+      throw new ApiError(400, "Invalid JSON data format");
+    }
+
+    const {
+      project: projectId,
+      validUntil,
+      scopeOfWork = [],
+      items = [],
+      termsAndConditions = [],
+      vatPercentage = 5,
+    } = jsonData;
+
+    // Validate items is an array
+    if (!Array.isArray(items)) {
+      throw new ApiError(400, "Items must be an array");
+    }
+
+    // Check for existing quotation
     const exists = await Quotation.findOne({ project: projectId });
     if (exists) throw new ApiError(400, "Project already has a quotation");
 
+    const estimation = await Estimation.findOne({ project: projectId });
+    const estimationId = estimation?._id;
+
+    // Process items with their corresponding files
     const processedItems = await Promise.all(
       items.map(async (item: any, index: number) => {
-        // Type the files object properly
-        const files = req.files as {
-          [fieldname: string]: Express.Multer.File[];
-        };
-        const fileKey = `items[${index}][image]`;
+        // Find the image file for this item using the correct fieldname pattern
+        const imageFile = (req.files as Express.Multer.File[]).find(
+          (f) => f.fieldname === `items[${index}][image]`
+        );
 
-        if (files && files[fileKey] && files[fileKey][0]) {
-          const uploadResult = await uploadItemImage(files[fileKey][0]);
+        if (imageFile) {
+          console.log(`Processing image for item ${index}:`, imageFile);
+          const uploadResult = await uploadItemImage(imageFile);
           if (uploadResult.uploadData) {
             item.image = uploadResult.uploadData;
           }
+        } else {
+          console.log(`No image found for item ${index}`);
         }
+
         item.totalPrice = item.quantity * item.unitPrice;
         return item;
       })
     );
+
+    // Calculate financial totals
+    const subtotal = processedItems.reduce(
+      (sum, item) => sum + item.totalPrice,
+      0
+    );
+    const vatAmount = subtotal * (vatPercentage / 100);
+    const total = subtotal + vatAmount;
+
     const quotation = await Quotation.create({
       project: projectId,
       estimation: estimationId,
@@ -57,7 +94,10 @@ export const createQuotation = asyncHandler(
       items: processedItems,
       termsAndConditions,
       vatPercentage,
-      preparedBy: req.user?._id,
+      subtotal,
+      vatAmount,
+      total,
+      preparedBy: req.user?.userId,
     });
 
     await Project.findByIdAndUpdate(projectId, { status: "quotation_sent" });
@@ -134,7 +174,7 @@ export const approveQuotation = asyncHandler(
       {
         isApproved,
         approvalComment: comment,
-        approvedBy: req.user?._id,
+        approvedBy: req.user?.userId,
       },
       { new: true }
     );
