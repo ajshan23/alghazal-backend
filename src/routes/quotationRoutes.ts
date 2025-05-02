@@ -5,6 +5,7 @@ import {
   updateQuotation,
   approveQuotation,
   deleteQuotation,
+  generateQuotationPdf,
 } from "../controllers/quotationController";
 import { authenticate, authorize } from "../middlewares/authMiddleware";
 import { upload } from "../config/multer";
@@ -51,4 +52,6 @@ router.patch(
 
 router.delete("/:id", authorize(["admin", "super_admin"]), deleteQuotation);
 
+
+router.get("/:id/generate-pdf", authorize(["admin", "super_admin"]),generateQuotationPdf);
 export default router;

@@ -6,6 +6,7 @@ import { Project } from "../models/projectModel";
 import { Client } from "../models/clientModel";
 import { Estimation } from "../models/estimationModel";
 import { User } from "@/models/userModel";
+import { Quotation } from "../models/quotationModel";
 
 // Status transition validation
 const validStatusTransitions: Record<string, string[]> = {
@@ -140,12 +141,18 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Check if an estimation exists for this project
-  const estimation = await Estimation.findOne({ project: id }).select("_id");
+  const estimation = await Estimation.findOne({ project: id }).select(
+    "_id isChecked isApproved"
+  );
+  const quotation = await Quotation.findOne({ project: id }).select("_id");
 
   // Create the response object
   const responseData = {
     ...project.toObject(),
     estimationId: estimation?._id || null,
+    quotationId: quotation?._id || null,
+    isChecked: estimation?.isChecked || false,
+    isApproved: estimation?.isApproved || false,
   };
 
   res
