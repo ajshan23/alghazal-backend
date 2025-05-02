@@ -7,6 +7,7 @@ import { Client } from "../models/clientModel";
 import { Estimation } from "../models/estimationModel";
 import { User } from "@/models/userModel";
 import { Quotation } from "../models/quotationModel";
+import { mailer } from "../utils/mailer"; // Import the mailer instance
 
 // Status transition validation
 const validStatusTransitions: Record<string, string[]> = {
@@ -254,22 +255,75 @@ export const assignProject = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
     const { assignedTo } = req.body;
+
+    // Validation
     if (!assignedTo || !id) {
       throw new ApiError(400, "AssignedTo is required");
     }
+
+    // Find project
     const project = await Project.findById(id);
     if (!project) {
       throw new ApiError(400, "Project not found");
     }
-    const engineerExists = await User.findById(assignedTo);
-    if (!engineerExists) {
+
+    // Find engineer
+    const engineer = await User.findById(assignedTo);
+    if (!engineer) {
       throw new ApiError(400, "Engineer not found");
     }
+
+    // Update project assignment
     project.assignedTo = assignedTo;
     await project.save();
-    res
-      .status(200)
-      .json(new ApiResponse(200, {}, "Project assigned updated successfully"));
+
+    try {
+      // Send email to the assigned engineer
+      await mailer.sendEmail({
+        to: engineer.email,
+        subject: `Project Assignment: ${project.projectName}`,
+        templateParams: {
+          userName: engineer.firstName || "Engineer",
+          actionUrl: `http://localhost:5173/app/project-view/${project._id}`,
+          contactEmail: "propertymanagement@alhamra.ae",
+          logoUrl:
+            "https://krishnadas-test-1.s3.ap-south-1.amazonaws.com/alghazal/logo+alghazal.png",
+          projectName: project.projectName || "the project",
+        },
+        text: `Dear ${
+          engineer.firstName || "Engineer"
+        },\n\nYou have been assigned to project "${
+          project.projectName || "the project"
+        }".\n\nView project details: http://localhost:5173/app/project-view/${
+          project._id
+        }\n\nBest regards,\nTECHNICAL SERVICE TEAM`,
+        headers: {
+          "X-Priority": "1",
+          Importance: "high",
+        },
+      });
+
+      res
+        .status(200)
+        .json(
+          new ApiResponse(
+            200,
+            {},
+            "Project assigned and notification sent successfully"
+          )
+        );
+    } catch (emailError) {
+      console.error("Email sending failed:", emailError);
+      res
+        .status(200)
+        .json(
+          new ApiResponse(
+            200,
+            {},
+            "Project assigned successfully but notification email failed to send"
+          )
+        );
+    }
   }
 );
 
